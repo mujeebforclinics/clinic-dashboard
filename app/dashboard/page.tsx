@@ -34,25 +34,53 @@ export default function DashboardPage() {
         return;
       }
 
-      const userId = sessionData.session.user.id;
+      const user = sessionData.session.user;
       const { data: link } = await supabase
         .from("clinic_owners")
         .select("clinic_id")
-        .eq("user_id", userId)
+        .eq("user_id", user.id)
         .single();
 
-      if (!link) {
+      if (link) {
+        const { data: clinicRow } = await supabase
+          .from("clinics")
+          .select("*")
+          .eq("id", link.clinic_id)
+          .single();
+        setClinic(clinicRow);
         setLoading(false);
         return;
       }
 
-      const { data: clinicRow } = await supabase
-        .from("clinics")
-        .select("*")
-        .eq("id", link.clinic_id)
-        .single();
+      const pendingName = user.user_metadata?.pending_clinic_name;
+      if (pendingName) {
+        const { data: newClinic, error: clinicError } = await supabase
+          .from("clinics")
+          .insert({
+            name: pendingName,
+            owner_name: user.user_metadata?.pending_owner_name ?? "",
+            email: user.email,
+            clinic_type: user.user_metadata?.pending_clinic_type ?? "General",
+          })
+          .select()
+          .single();
 
-      setClinic(clinicRow);
+        if (!clinicError && newClinic) {
+          await supabase.from("clinic_owners").insert({
+            user_id: user.id,
+            clinic_id: newClinic.id,
+          });
+          await supabase.from("subscriptions").insert({
+            clinic_id: newClinic.id,
+            plan: "standard",
+            status: "trial",
+          });
+          setClinic(newClinic);
+          setLoading(false);
+          return;
+        }
+      }
+
       setLoading(false);
     };
     init();
