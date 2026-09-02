@@ -14,6 +14,7 @@ export default function SignupPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [checkEmail, setCheckEmail] = useState(false);
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -21,48 +22,53 @@ export default function SignupPage() {
     setLoading(true);
 
     try {
-      // 1. Create the auth user
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email,
-        password,
-      });
+      const { data: authData, error: authError } = await supabase.auth.signUp(
+        {
+          email,
+          password,
+          options: {
+            data: {
+              pending_clinic_name: clinicName,
+              pending_owner_name: ownerName,
+              pending_clinic_type: clinicType,
+            },
+          },
+        }
+      );
       if (authError) throw authError;
       if (!authData.user) throw new Error("Signup did not return a user.");
 
-      // 2. Create the clinic row
-      const { data: clinicRow, error: clinicError } = await supabase
-        .from("clinics")
-        .insert({
-          name: clinicName,
-          owner_name: ownerName,
-          email,
-          clinic_type: clinicType,
-        })
-        .select()
-        .single();
-      if (clinicError) throw clinicError;
-
-      // 3. Link the auth user to the clinic
-      const { error: linkError } = await supabase.from("clinic_owners").insert({
-        user_id: authData.user.id,
-        clinic_id: clinicRow.id,
-      });
-      if (linkError) throw linkError;
-
-      // 4. Start a trial subscription row
-      await supabase.from("subscriptions").insert({
-        clinic_id: clinicRow.id,
-        plan: "standard",
-        status: "trial",
-      });
-
-      router.replace("/dashboard");
+      if (authData.session) {
+        router.replace("/dashboard");
+      } else {
+        setCheckEmail(true);
+      }
     } catch (err: any) {
       setError(err.message ?? "Something went wrong. Please try again.");
     } finally {
       setLoading(false);
     }
   };
+
+  if (checkEmail) {
+    return (
+      <main className="min-h-screen flex items-center justify-center px-4">
+        <div className="card p-6 max-w-sm text-center">
+          <p className="font-display text-xl font-semibold mb-2">
+            Check your email
+          </p>
+          <p className="text-sm text-ink/60">
+            We sent a confirmation link to <strong>{email}</strong>. Click it,
+            then come back and log in — your clinic will be set up
+            automatically.
+          </p>
+          <Link href="/login" className="btn-primary inline-block mt-4">
+            Go to login
+          </Link>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen flex items-center justify-center px-4">
