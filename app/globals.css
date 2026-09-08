@@ -12,8 +12,11 @@ body { background-color: #f6f2ec; color: #1c2321; }
 
 .card { background: white; border: 1px solid #e4ded2; border-radius: 0.75rem; }
 
+/* Primary actions use the calming teal — clay/orange is reserved for
+   alerts (low stock, unpaid, cancelled, no-show) so warnings actually
+   stand out instead of blending into everyday buttons. */
 .btn-primary {
-  background-color: #b5563c; color: white; border-radius: 0.5rem;
+  background-color: #1d7874; color: white; border-radius: 0.5rem;
   padding: 0.6rem 1.1rem; font-weight: 600; transition: opacity 0.15s ease;
 }
 .btn-primary:hover { opacity: 0.9; }
@@ -29,7 +32,7 @@ body { background-color: #f6f2ec; color: #1c2321; }
   border: 1px solid #e4ded2; border-radius: 0.5rem; padding: 0.55rem 0.75rem;
   width: 100%; background: white; font-size: 0.925rem;
 }
-.input:focus { outline: 2px solid #b5563c; outline-offset: 1px; }
+.input:focus { outline: 2px solid #1d7874; outline-offset: 1px; }
 
 .tab { padding: 0.5rem 0.9rem; border-radius: 0.5rem; font-weight: 500; font-size: 0.9rem; color: #6b6156; }
 .tab-active { background: #1c2321; color: white; }

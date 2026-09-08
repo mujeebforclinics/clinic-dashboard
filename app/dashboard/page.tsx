@@ -10,6 +10,7 @@ import AppointmentsTab from "@/components/AppointmentsTab";
 import BillingTab from "@/components/BillingTab";
 import InventoryTab from "@/components/InventoryTab";
 import OwnerQuickView from "@/components/OwnerQuickView";
+import NoteForOwner from "@/components/NoteForOwner";
 
 type TabKey = "overview" | "patients" | "appointments" | "billing" | "inventory";
 
@@ -128,9 +129,12 @@ export default function DashboardPage() {
             </p>
             <p className="text-xs text-ink/50">{clinic.clinic_type}</p>
           </div>
-          <button className="btn-ghost text-sm" onClick={handleLogout}>
-            Log out
-          </button>
+          <div className="flex items-center gap-2">
+            <NoteForOwner clinicId={clinic.id} />
+            <button className="btn-ghost text-sm" onClick={handleLogout}>
+              Log out
+            </button>
+          </div>
         </div>
       </header>
 
