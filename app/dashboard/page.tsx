@@ -9,6 +9,7 @@ import PatientsTab from "@/components/PatientsTab";
 import AppointmentsTab from "@/components/AppointmentsTab";
 import BillingTab from "@/components/BillingTab";
 import InventoryTab from "@/components/InventoryTab";
+import OwnerQuickView from "@/components/OwnerQuickView";
 
 type TabKey = "overview" | "patients" | "appointments" | "billing" | "inventory";
 
@@ -52,6 +53,9 @@ export default function DashboardPage() {
         return;
       }
 
+      // No clinic linked yet — this can happen on first login after email
+      // confirmation. If the signup form left pending clinic details in
+      // this user's metadata, create the clinic now.
       const pendingName = user.user_metadata?.pending_clinic_name;
       if (pendingName) {
         const { data: newClinic, error: clinicError } = await supabase
@@ -151,6 +155,9 @@ export default function DashboardPage() {
         {activeTab === "billing" && <BillingTab clinicId={clinic.id} />}
         {activeTab === "inventory" && <InventoryTab clinicId={clinic.id} />}
       </div>
+
+      {/* Floating owner quick-view — visible on every tab */}
+      <OwnerQuickView clinicId={clinic.id} />
     </main>
   );
 }

@@ -16,10 +16,7 @@ export default function LoginPage() {
     e.preventDefault();
     setError(null);
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
     setLoading(false);
     if (error) {
       setError(error.message);
@@ -31,9 +28,7 @@ export default function LoginPage() {
   return (
     <main className="min-h-screen flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
-        <h1 className="font-display text-3xl font-semibold mb-1">
-          Welcome back
-        </h1>
+        <h1 className="font-display text-3xl font-semibold mb-1">Welcome back</h1>
         <p className="text-ink/60 mb-6 text-sm">
           Log in to see today's appointments, billing, and stock — live.
         </p>
@@ -41,47 +36,22 @@ export default function LoginPage() {
         <form onSubmit={handleLogin} className="card p-6 space-y-4">
           <div>
             <label className="text-sm font-medium mb-1 block">Email</label>
-            <input
-              className="input"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-            />
+            <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
           </div>
           <div>
-            <label className="text-sm font-medium mb-1 block">
-              Password
-            </label>
-            <input
-              className="input"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
+            <label className="text-sm font-medium mb-1 block">Password</label>
+            <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
           </div>
 
-          {error && (
-            <p className="text-sm text-clay bg-clay/10 rounded-lg px-3 py-2">
-              {error}
-            </p>
-          )}
+          {error && <p className="text-sm text-clay bg-clay/10 rounded-lg px-3 py-2">{error}</p>}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="btn-primary w-full"
-          >
+          <button type="submit" disabled={loading} className="btn-primary w-full">
             {loading ? "Logging in…" : "Log in"}
           </button>
         </form>
 
         <p className="text-sm text-ink/60 mt-4 text-center">
-          New clinic?{" "}
-          <Link href="/signup" className="text-clay font-medium">
-            Create an account
-          </Link>
+          New clinic? <Link href="/signup" className="text-clay font-medium">Create an account</Link>
         </p>
       </div>
     </main>
