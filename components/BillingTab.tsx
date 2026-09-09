@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { formatCurrency } from "@/lib/format";
 import type { Invoice, Patient } from "@/lib/types";
 
 export default function BillingTab({ clinicId }: { clinicId: string }) {
@@ -14,12 +15,13 @@ export default function BillingTab({ clinicId }: { clinicId: string }) {
   const [payingId, setPayingId] = useState<string | null>(null);
   const [payAmount, setPayAmount] = useState("");
   const [payMethod, setPayMethod] = useState("cash");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const load = async () => {
     const [{ data: inv }, { data: pts }] = await Promise.all([
       supabase
         .from("invoices")
-        .select("*, patients(full_name), payments(amount)")
+        .select("*, patients(full_name), payments(id, amount, payment_method, paid_at)")
         .eq("clinic_id", clinicId)
         .order("invoice_date", { ascending: false }),
       supabase.from("patients").select("*").eq("clinic_id", clinicId),
@@ -76,8 +78,8 @@ export default function BillingTab({ clinicId }: { clinicId: string }) {
   };
 
   const statusColor: Record<string, string> = {
-    paid: "bg-sage/15 text-sage",
-    partial: "bg-clay/10 text-clay",
+    paid: "bg-teal/15 text-teal",
+    partial: "bg-amber-100 text-amber-700",
     unpaid: "bg-clay/15 text-clay",
   };
 
@@ -132,6 +134,7 @@ export default function BillingTab({ clinicId }: { clinicId: string }) {
         {invoices.map((inv) => {
           const paid = paidSoFar(inv);
           const balance = Number(inv.total_amount) - paid;
+          const paymentCount = (inv.payments ?? []).length;
           return (
             <div key={inv.id} className="p-4">
               <div className="flex items-center justify-between">
@@ -140,8 +143,18 @@ export default function BillingTab({ clinicId }: { clinicId: string }) {
                     {inv.patients?.full_name ?? "Unknown"}
                   </p>
                   <p className="text-sm text-ink/60">
-                    {inv.invoice_date} · ₹{inv.total_amount} total · ₹
-                    {balance.toFixed(0)} due
+                    {inv.invoice_date} · {formatCurrency(Number(inv.total_amount))} total ·{" "}
+                    {formatCurrency(balance)} due
+                    {paymentCount > 0 && (
+                      <button
+                        className="ml-2 text-teal underline underline-offset-2"
+                        onClick={() =>
+                          setExpandedId(expandedId === inv.id ? null : inv.id)
+                        }
+                      >
+                        {paymentCount} payment{paymentCount > 1 ? "s" : ""}
+                      </button>
+                    )}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -162,6 +175,21 @@ export default function BillingTab({ clinicId }: { clinicId: string }) {
                   )}
                 </div>
               </div>
+
+              {expandedId === inv.id && (
+                <ul className="mt-3 space-y-1 bg-sand rounded-lg p-3">
+                  {(inv.payments ?? []).map((p: any) => (
+                    <li key={p.id} className="text-sm flex justify-between">
+                      <span className="text-ink/60">
+                        {new Date(p.paid_at).toLocaleDateString()} · {p.payment_method}
+                      </span>
+                      <span className="font-medium">
+                        {formatCurrency(Number(p.amount))}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
 
               {payingId === inv.id && (
                 <div className="mt-3 flex gap-2">

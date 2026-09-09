@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { formatCurrency } from "@/lib/format";
 import {
   PieChart,
   Pie,
@@ -341,13 +342,13 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
                 <div className="card p-4">
                   <p className="text-xs text-ink/60">Revenue today</p>
                   <p className="font-display text-2xl font-semibold mt-1">
-                    ₹{data.revenueToday.toFixed(0)}
+                    {formatCurrency(data.revenueToday)}
                   </p>
                 </div>
                 <div className="card p-4">
                   <p className="text-xs text-ink/60">Pending dues</p>
                   <p className="font-display text-2xl font-semibold mt-1">
-                    ₹{data.pendingDuesTotal.toFixed(0)}
+                    {formatCurrency(data.pendingDuesTotal)}
                   </p>
                 </div>
               </div>

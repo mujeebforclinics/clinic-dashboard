@@ -12,6 +12,7 @@ export default function AppointmentsTab({ clinicId }: { clinicId: string }) {
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [time, setTime] = useState("");
   const [notes, setNotes] = useState("");
+  const [referredToLab, setReferredToLab] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const load = async () => {
@@ -43,11 +44,13 @@ export default function AppointmentsTab({ clinicId }: { clinicId: string }) {
       appointment_date: date,
       appointment_time: time || null,
       notes,
+      referred_to_lab: referredToLab,
       status: "scheduled",
     });
     setSaving(false);
     setNotes("");
     setTime("");
+    setReferredToLab(false);
     setShowForm(false);
     load();
   };
@@ -107,6 +110,15 @@ export default function AppointmentsTab({ clinicId }: { clinicId: string }) {
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
           />
+          <label className="col-span-2 flex items-center gap-2 text-sm text-ink/70">
+            <input
+              type="checkbox"
+              checked={referredToLab}
+              onChange={(e) => setReferredToLab(e.target.checked)}
+              className="w-4 h-4"
+            />
+            Referred to lab
+          </label>
           <button
             type="submit"
             disabled={saving}
