@@ -40,14 +40,24 @@ type Snapshot = {
   pendingDuesTotal: number;
   revenueTrend: { day: string; amount: number }[];
   weeklyAppointments: { day: string; count: number }[];
+  topLocalities: { locality: string; count: number }[];
+  paymentMethods: { name: string; value: number }[];
 };
 
-const COLORS: Record<string, string> = {
+const STATUS_COLORS: Record<string, string> = {
   Scheduled: "#1D7874",
   Completed: "#1C2321",
   Cancelled: "#B5563C",
   "No-show": "#D8B4A0",
 };
+
+const METHOD_COLORS: Record<string, string> = {
+  Cash: "#1D7874",
+  UPI: "#6D5DD3",
+  Card: "#D6537A",
+};
+
+const LOCALITY_COLORS = ["#1D7874", "#6D5DD3", "#D6537A", "#D97706", "#5C7A6E"];
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -61,6 +71,9 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
     const sevenDaysAgoStr = sevenDaysAgo.toISOString().slice(0, 10);
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().slice(0, 10);
 
     const [
       { data: appts },
@@ -70,6 +83,8 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
       { data: trendPayments },
       { data: weekAppts },
       { data: unreadNotes },
+      { data: localityRows },
+      { data: methodRows },
     ] = await Promise.all([
       supabase
         .from("appointments")
@@ -106,6 +121,16 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
         .eq("clinic_id", clinicId)
         .eq("is_read", false)
         .order("created_at", { ascending: false }),
+      supabase
+        .from("patients")
+        .select("locality")
+        .eq("clinic_id", clinicId)
+        .not("locality", "is", null),
+      supabase
+        .from("payments")
+        .select("amount, payment_method")
+        .eq("clinic_id", clinicId)
+        .gte("paid_at", thirtyDaysAgoStr),
     ]);
 
     const counts = { scheduled: 0, completed: 0, cancelled: 0, noShow: 0 };
@@ -179,6 +204,31 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
       })
     );
 
+    const localityCounts: Record<string, number> = {};
+    (localityRows ?? []).forEach((r: any) => {
+      const loc = (r.locality ?? "").trim();
+      if (!loc) return;
+      localityCounts[loc] = (localityCounts[loc] ?? 0) + 1;
+    });
+    const topLocalities = Object.entries(localityCounts)
+      .map(([locality, count]) => ({ locality, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+
+    const methodTotals: Record<string, number> = { Cash: 0, UPI: 0, Card: 0 };
+    (methodRows ?? []).forEach((p: any) => {
+      const label =
+        p.payment_method === "upi"
+          ? "UPI"
+          : p.payment_method === "card"
+          ? "Card"
+          : "Cash";
+      methodTotals[label] += Number(p.amount);
+    });
+    const paymentMethods = Object.entries(methodTotals)
+      .map(([name, value]) => ({ name, value }))
+      .filter((m) => m.value > 0);
+
     setNotes((unreadNotes as any) ?? []);
     setData({
       totalToday: (appts ?? []).length,
@@ -191,6 +241,8 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
       pendingDuesTotal,
       revenueTrend,
       weeklyAppointments,
+      topLocalities,
+      paymentMethods,
     });
   };
 
@@ -205,31 +257,12 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
 
     const channel = supabase
       .channel("owner-quick-view")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "appointments" },
-        load
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "payments" },
-        load
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "inventory_batches" },
-        load
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "invoices" },
-        load
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "staff_notes" },
-        load
-      )
+      .on("postgres_changes", { event: "*", schema: "public", table: "appointments" }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "payments" }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "inventory_batches" }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "invoices" }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "staff_notes" }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "patients" }, load)
       .subscribe();
 
     return () => {
@@ -254,20 +287,9 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
         aria-label="Owner quick view"
         className="fixed right-4 top-1/2 -translate-y-1/2 z-40 w-14 h-14 rounded-full bg-teal text-white shadow-lg flex items-center justify-center hover:opacity-90 transition"
       >
-        <svg
-          width="24"
-          height="24"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-        >
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
           <path d="M3 3v18h18" strokeLinecap="round" strokeLinejoin="round" />
-          <path
-            d="M7 14l3-3 3 3 5-5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
+          <path d="M7 14l3-3 3 3 5-5" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
         {notes.length > 0 && (
           <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-clay text-white text-[10px] font-bold flex items-center justify-center">
@@ -277,10 +299,7 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
       </button>
 
       {open && (
-        <div
-          className="fixed inset-0 bg-black/30 z-40"
-          onClick={() => setOpen(false)}
-        />
+        <div className="fixed inset-0 bg-black/30 z-40" onClick={() => setOpen(false)} />
       )}
 
       <div
@@ -288,11 +307,9 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
           open ? "translate-y-0" : "-translate-y-full"
         }`}
       >
-        <div className="p-5 max-w-3xl mx-auto">
+        <div className="p-5 max-w-4xl mx-auto">
           <div className="flex items-center justify-between mb-5">
-            <h2 className="font-display text-xl font-semibold">
-              Today's Snapshot
-            </h2>
+            <h2 className="font-display text-xl font-semibold">Today's Snapshot</h2>
             <button
               onClick={() => setOpen(false)}
               className="text-ink/50 hover:text-ink text-2xl leading-none"
@@ -339,15 +356,19 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
               )}
 
               <div className="grid grid-cols-2 gap-3">
-                <div className="card p-4">
+                <div className="card p-4 bg-teal/5 border border-teal/20">
                   <p className="text-xs text-ink/60">Revenue today</p>
-                  <p className="font-display text-2xl font-semibold mt-1">
+                  <p className="font-display text-2xl font-semibold mt-1 text-teal">
                     {formatCurrency(data.revenueToday)}
                   </p>
                 </div>
-                <div className="card p-4">
+                <div
+                  className={`card p-4 border ${
+                    data.pendingDuesTotal > 0 ? "bg-clay/5 border-clay/20" : "bg-teal/5 border-teal/20"
+                  }`}
+                >
                   <p className="text-xs text-ink/60">Pending dues</p>
-                  <p className="font-display text-2xl font-semibold mt-1">
+                  <p className={`font-display text-2xl font-semibold mt-1 ${data.pendingDuesTotal > 0 ? "text-clay" : "text-teal"}`}>
                     {formatCurrency(data.pendingDuesTotal)}
                   </p>
                 </div>
@@ -359,26 +380,14 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
                     Appointments today ({data.totalToday})
                   </p>
                   {pieData.length === 0 ? (
-                    <p className="text-sm text-ink/40 py-6 text-center">
-                      No appointments today yet
-                    </p>
+                    <p className="text-sm text-ink/40 py-6 text-center">No appointments today yet</p>
                   ) : (
                     <div style={{ width: "100%", height: 160 }}>
                       <ResponsiveContainer>
                         <PieChart>
-                          <Pie
-                            data={pieData}
-                            dataKey="value"
-                            nameKey="name"
-                            innerRadius={40}
-                            outerRadius={62}
-                            paddingAngle={2}
-                          >
+                          <Pie data={pieData} dataKey="value" nameKey="name" innerRadius={40} outerRadius={62} paddingAngle={2}>
                             {pieData.map((entry) => (
-                              <Cell
-                                key={entry.name}
-                                fill={COLORS[entry.name]}
-                              />
+                              <Cell key={entry.name} fill={STATUS_COLORS[entry.name]} />
                             ))}
                           </Pie>
                           <Tooltip />
@@ -389,10 +398,7 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
                   <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-xs text-ink/60">
                     {pieData.map((d) => (
                       <span key={d.name} className="flex items-center gap-1">
-                        <span
-                          className="w-2 h-2 rounded-full inline-block"
-                          style={{ background: COLORS[d.name] }}
-                        />
+                        <span className="w-2 h-2 rounded-full inline-block" style={{ background: STATUS_COLORS[d.name] }} />
                         {d.name}: {d.value}
                       </span>
                     ))}
@@ -400,71 +406,96 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
                 </div>
 
                 <div className="card p-4">
-                  <p className="text-sm text-ink/60 mb-2">
-                    Revenue, last 7 days
-                  </p>
+                  <p className="text-sm text-ink/60 mb-2">Revenue, last 7 days</p>
                   <div style={{ width: "100%", height: 160 }}>
                     <ResponsiveContainer>
                       <LineChart data={data.revenueTrend}>
-                        <XAxis
-                          dataKey="day"
-                          tick={{ fontSize: 11 }}
-                          axisLine={false}
-                          tickLine={false}
-                        />
+                        <XAxis dataKey="day" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
                         <YAxis hide />
                         <Tooltip />
-                        <Line
-                          type="monotone"
-                          dataKey="amount"
-                          stroke="#1D7874"
-                          strokeWidth={2}
-                          dot={{ r: 3 }}
-                        />
+                        <Line type="monotone" dataKey="amount" stroke="#1D7874" strokeWidth={2} dot={{ r: 3 }} />
                       </LineChart>
                     </ResponsiveContainer>
                   </div>
                 </div>
 
-                <div className="card p-4 sm:col-span-2">
-                  <p className="text-sm text-ink/60 mb-2">
-                    Appointments this week
-                  </p>
+                <div className="card p-4">
+                  <p className="text-sm text-ink/60 mb-2">Appointments this week</p>
                   <div style={{ width: "100%", height: 160 }}>
                     <ResponsiveContainer>
                       <BarChart data={data.weeklyAppointments}>
-                        <XAxis
-                          dataKey="day"
-                          tick={{ fontSize: 11 }}
-                          axisLine={false}
-                          tickLine={false}
-                        />
+                        <XAxis dataKey="day" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
                         <YAxis hide />
                         <Tooltip />
-                        <Bar dataKey="count" fill="#1D7874" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="count" fill="#6D5DD3" radius={[4, 4, 0, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
                 </div>
+
+                <div className="card p-4">
+                  <p className="text-sm text-ink/60 mb-2">Payment methods (30 days)</p>
+                  {data.paymentMethods.length === 0 ? (
+                    <p className="text-sm text-ink/40 py-6 text-center">No payments yet</p>
+                  ) : (
+                    <div style={{ width: "100%", height: 160 }}>
+                      <ResponsiveContainer>
+                        <PieChart>
+                          <Pie data={data.paymentMethods} dataKey="value" nameKey="name" innerRadius={40} outerRadius={62} paddingAngle={2}>
+                            {data.paymentMethods.map((entry) => (
+                              <Cell key={entry.name} fill={METHOD_COLORS[entry.name]} />
+                            ))}
+                          </Pie>
+                          <Tooltip formatter={(v: number) => formatCurrency(v)} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+                  <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-xs text-ink/60">
+                    {data.paymentMethods.map((d) => (
+                      <span key={d.name} className="flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full inline-block" style={{ background: METHOD_COLORS[d.name] }} />
+                        {d.name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="card p-4 sm:col-span-2">
+                  <p className="text-sm text-ink/60 mb-2">Top localities — where patients come from</p>
+                  {data.topLocalities.length === 0 ? (
+                    <p className="text-sm text-ink/40 py-4 text-center">
+                      No locality data yet — add a locality when creating patients
+                    </p>
+                  ) : (
+                    <div style={{ width: "100%", height: 160 }}>
+                      <ResponsiveContainer>
+                        <BarChart data={data.topLocalities} layout="vertical" margin={{ left: 20 }}>
+                          <XAxis type="number" hide />
+                          <YAxis dataKey="locality" type="category" tick={{ fontSize: 12 }} axisLine={false} tickLine={false} width={100} />
+                          <Tooltip />
+                          <Bar dataKey="count" radius={[0, 4, 4, 0]}>
+                            {data.topLocalities.map((entry, i) => (
+                              <Cell key={entry.locality} fill={LOCALITY_COLORS[i % LOCALITY_COLORS.length]} />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="card p-4">
-                <p className="text-sm text-ink/60 mb-2">
-                  Low stock ({data.lowStockItems.length})
-                </p>
+                <p className="text-sm text-ink/60 mb-2">Low stock ({data.lowStockItems.length})</p>
                 {data.lowStockItems.length === 0 ? (
                   <p className="text-sm text-ink/40 py-2">All stocked up 👍</p>
                 ) : (
                   <ul className="space-y-1">
                     {data.lowStockItems.map((item) => (
-                      <li
-                        key={item.id}
-                        className="flex items-center justify-between text-sm bg-clay/10 text-clay rounded-lg px-3 py-2"
-                      >
+                      <li key={item.id} className="flex items-center justify-between text-sm bg-clay/10 text-clay rounded-lg px-3 py-2">
                         <span>{item.item_name}</span>
-                        <span className="font-medium">
-                          {item.qty}/{item.reorder_level}
-                        </span>
+                        <span className="font-medium">{item.qty}/{item.reorder_level}</span>
                       </li>
                     ))}
                   </ul>

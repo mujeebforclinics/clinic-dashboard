@@ -14,6 +14,8 @@ const config: Config = {
         sage: "#5C7A6E",
         line: "#E4DED2",
         teal: "#1D7874",
+        violet: "#6D5DD3",
+        rose: "#D6537A",
       },
       fontFamily: {
         display: ["var(--font-display)"],

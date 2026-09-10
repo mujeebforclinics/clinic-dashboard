@@ -10,11 +10,12 @@ export default function OverviewTab({ clinicId }: { clinicId: string }) {
   const [weekRevenue, setWeekRevenue] = useState<number | null>(null);
   const [monthRevenue, setMonthRevenue] = useState<number | null>(null);
   const [todayCount, setTodayCount] = useState<number | null>(null);
-  const [newPatients, setNewPatients] = useState<number | null>(null);
-  const [returningPatients, setReturningPatients] = useState<number | null>(null);
+  const [newNames, setNewNames] = useState<string[]>([]);
+  const [returningNames, setReturningNames] = useState<string[]>([]);
   const [outstandingTotal, setOutstandingTotal] = useState<number | null>(null);
   const [lowStockCount, setLowStockCount] = useState<number | null>(null);
   const [labReferrals, setLabReferrals] = useState<number | null>(null);
+  const [showPatientList, setShowPatientList] = useState(false);
 
   const loadStats = async () => {
     const today = new Date().toISOString().slice(0, 10);
@@ -42,7 +43,7 @@ export default function OverviewTab({ clinicId }: { clinicId: string }) {
       supabase.from("payments").select("amount").eq("clinic_id", clinicId).gte("paid_at", weekStartStr),
       supabase.from("payments").select("amount").eq("clinic_id", clinicId).gte("paid_at", monthStartStr),
       supabase.from("appointments").select("*", { count: "exact", head: true }).eq("clinic_id", clinicId).eq("appointment_date", today),
-      supabase.from("appointments").select("patient_id").eq("clinic_id", clinicId).eq("appointment_date", today),
+      supabase.from("appointments").select("patient_id, patients(full_name)").eq("clinic_id", clinicId).eq("appointment_date", today),
       supabase.from("invoices").select("total_amount, payments(amount)").eq("clinic_id", clinicId).in("status", ["unpaid", "partial"]),
       supabase.from("inventory_items").select("id, reorder_level, inventory_batches(quantity)").eq("clinic_id", clinicId),
       supabase.from("appointments").select("*", { count: "exact", head: true }).eq("clinic_id", clinicId).eq("referred_to_lab", true),
@@ -56,9 +57,11 @@ export default function OverviewTab({ clinicId }: { clinicId: string }) {
     setTodayCount(apptCount ?? 0);
     setLabReferrals(labCount ?? 0);
 
-    // New vs returning: for each patient with an appointment today, check
-    // whether they had any appointment before today.
-    const patientIds = Array.from(new Set((todaysAppts ?? []).map((a: any) => a.patient_id)));
+    const uniqueToday = Array.from(
+      new Map((todaysAppts ?? []).map((a: any) => [a.patient_id, a.patients?.full_name ?? "Unknown"])).entries()
+    );
+    const patientIds = uniqueToday.map(([id]) => id);
+
     if (patientIds.length > 0) {
       const { data: priorAppts } = await supabase
         .from("appointments")
@@ -67,11 +70,11 @@ export default function OverviewTab({ clinicId }: { clinicId: string }) {
         .lt("appointment_date", today)
         .in("patient_id", patientIds);
       const returningIds = new Set((priorAppts ?? []).map((a: any) => a.patient_id));
-      setReturningPatients(returningIds.size);
-      setNewPatients(patientIds.length - returningIds.size);
+      setReturningNames(uniqueToday.filter(([id]) => returningIds.has(id)).map(([, name]) => name));
+      setNewNames(uniqueToday.filter(([id]) => !returningIds.has(id)).map(([, name]) => name));
     } else {
-      setReturningPatients(0);
-      setNewPatients(0);
+      setReturningNames([]);
+      setNewNames([]);
     }
 
     const outstanding = (invoices ?? []).reduce((sum: number, inv: any) => {
@@ -102,8 +105,6 @@ export default function OverviewTab({ clinicId }: { clinicId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clinicId]);
 
-  // Trend: compare today's revenue so far to yesterday's full-day revenue.
-  // Green = up or flat, yellow = modest drop, red = steep drop.
   let trendColor = "text-ink/60";
   let trendBg = "bg-ink/5";
   let trendLabel = "—";
@@ -126,8 +127,7 @@ export default function OverviewTab({ clinicId }: { clinicId: string }) {
 
   return (
     <div className="space-y-5">
-      {/* Hero: today's collection — the one bold element */}
-      <div className="card p-6 md:p-8">
+      <div className="card p-6 md:p-8 bg-gradient-to-br from-teal/10 via-white to-white">
         <p className="text-sm text-ink/60 mb-1">Today's collection</p>
         <div className="flex items-end gap-3 flex-wrap">
           <p className="font-display text-4xl md:text-5xl font-semibold">
@@ -143,45 +143,86 @@ export default function OverviewTab({ clinicId }: { clinicId: string }) {
         </div>
       </div>
 
-      {/* Secondary stats — varied accents tied to meaning, not identical cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="card p-5 border-l-4 border-l-teal">
+        <div className="card p-5 bg-teal/5 border border-teal/20">
           <p className="text-sm text-ink/60">Today's appointments</p>
-          <p className="font-display text-2xl font-semibold mt-1">
+          <p className="font-display text-2xl font-semibold mt-1 text-teal">
             {todayCount === null ? "…" : todayCount}
           </p>
         </div>
-        <div className="card p-5 border-l-4 border-l-sage">
+
+        <button
+          onClick={() => setShowPatientList(!showPatientList)}
+          className="card p-5 bg-violet/5 border border-violet/20 text-left hover:bg-violet/10 transition"
+        >
           <p className="text-sm text-ink/60">New / Returning today</p>
-          <p className="font-display text-2xl font-semibold mt-1">
-            {newPatients === null ? "…" : `${newPatients} / ${returningPatients}`}
+          <p className="font-display text-2xl font-semibold mt-1 text-violet">
+            {newNames.length + returningNames.length === 0 ? "…" : `${newNames.length} / ${returningNames.length}`}
           </p>
-        </div>
+          <p className="text-xs text-violet/70 mt-0.5 underline underline-offset-2">
+            {showPatientList ? "Hide names" : "View names"}
+          </p>
+        </button>
+
         <div
-          className={`card p-5 border-l-4 ${
-            (outstandingTotal ?? 0) > 0 ? "border-l-clay" : "border-l-sage"
+          className={`card p-5 border ${
+            (outstandingTotal ?? 0) > 0
+              ? "bg-clay/5 border-clay/20"
+              : "bg-teal/5 border-teal/20"
           }`}
         >
           <p className="text-sm text-ink/60">Outstanding dues</p>
-          <p className="font-display text-2xl font-semibold mt-1">
+          <p className={`font-display text-2xl font-semibold mt-1 ${(outstandingTotal ?? 0) > 0 ? "text-clay" : "text-teal"}`}>
             {outstandingTotal === null ? "…" : formatCurrency(outstandingTotal)}
           </p>
         </div>
+
         <div
-          className={`card p-5 border-l-4 ${
-            (lowStockCount ?? 0) > 0 ? "border-l-clay" : "border-l-sage"
+          className={`card p-5 border ${
+            (lowStockCount ?? 0) > 0
+              ? "bg-clay/5 border-clay/20"
+              : "bg-teal/5 border-teal/20"
           }`}
         >
           <p className="text-sm text-ink/60">Low stock items</p>
-          <p className="font-display text-2xl font-semibold mt-1">
+          <p className={`font-display text-2xl font-semibold mt-1 ${(lowStockCount ?? 0) > 0 ? "text-clay" : "text-teal"}`}>
             {lowStockCount === null ? "…" : lowStockCount}
           </p>
         </div>
       </div>
 
-      <div className="card p-5 border-l-4 border-l-teal inline-flex items-center gap-3 w-auto">
+      {showPatientList && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="card p-4 bg-violet/5 border border-violet/20">
+            <p className="text-sm font-medium text-violet mb-2">New today ({newNames.length})</p>
+            {newNames.length === 0 ? (
+              <p className="text-sm text-ink/40">None yet</p>
+            ) : (
+              <ul className="text-sm space-y-1">
+                {newNames.map((n, i) => (
+                  <li key={i} className="text-ink/80">{n}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div className="card p-4 bg-sage/5 border border-sage/20">
+            <p className="text-sm font-medium text-sage mb-2">Returning today ({returningNames.length})</p>
+            {returningNames.length === 0 ? (
+              <p className="text-sm text-ink/40">None yet</p>
+            ) : (
+              <ul className="text-sm space-y-1">
+                {returningNames.map((n, i) => (
+                  <li key={i} className="text-ink/80">{n}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className="card p-5 bg-rose/5 border border-rose/20 inline-flex items-center gap-3 w-auto">
         <span className="text-sm text-ink/60">Referred to lab (all time)</span>
-        <span className="font-display text-xl font-semibold">
+        <span className="font-display text-xl font-semibold text-rose">
           {labReferrals === null ? "…" : labReferrals}
         </span>
       </div>

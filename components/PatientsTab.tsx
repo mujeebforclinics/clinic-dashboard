@@ -11,6 +11,8 @@ export default function PatientsTab({ clinicId }: { clinicId: string }) {
   const [phone, setPhone] = useState("");
   const [age, setAge] = useState("");
   const [gender, setGender] = useState("");
+  const [locality, setLocality] = useState("");
+  const [address, setAddress] = useState("");
   const [saving, setSaving] = useState(false);
 
   const load = async () => {
@@ -36,12 +38,16 @@ export default function PatientsTab({ clinicId }: { clinicId: string }) {
       phone,
       age: age ? Number(age) : null,
       gender,
+      locality,
+      address,
     });
     setSaving(false);
     setName("");
     setPhone("");
     setAge("");
     setGender("");
+    setLocality("");
+    setAddress("");
     setShowForm(false);
     load();
   };
@@ -87,6 +93,21 @@ export default function PatientsTab({ clinicId }: { clinicId: string }) {
             <option>Female</option>
             <option>Other</option>
           </select>
+          <input
+            className="input"
+            placeholder="Locality (e.g. Saket, GK-1)"
+            value={locality}
+            onChange={(e) => setLocality(e.target.value)}
+          />
+          <input
+            className="input col-span-2"
+            placeholder="Full address (optional)"
+            value={address}
+            onChange={(e) => setAddress(e.target.value)}
+          />
+          <p className="col-span-2 text-xs text-ink/50 -mt-1">
+            Locality helps the owner see where patients are coming from on the Snapshot panel.
+          </p>
           <button
             type="submit"
             disabled={saving}
@@ -110,6 +131,11 @@ export default function PatientsTab({ clinicId }: { clinicId: string }) {
               <p className="text-sm text-ink/60">
                 {p.phone || "No phone"} · {p.age ? `${p.age} yrs` : "—"} ·{" "}
                 {p.gender || "—"}
+                {p.locality && (
+                  <>
+                    {" "}· <span className="text-violet font-medium">{p.locality}</span>
+                  </>
+                )}
               </p>
             </div>
           </div>
