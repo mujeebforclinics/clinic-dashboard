@@ -66,6 +66,7 @@ export default function BillingTab({ clinicId }: { clinicId: string }) {
     await supabase.from("payments").insert({
       clinic_id: clinicId,
       invoice_id: invoice.id,
+      doctor_id: invoice.doctor_id ?? null,
       amount: amt,
       payment_method: payMethod,
     });

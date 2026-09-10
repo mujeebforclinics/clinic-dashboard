@@ -17,28 +17,24 @@ import {
   Bar,
 } from "recharts";
 
-type StaffNote = {
-  id: string;
-  message: string;
-  urgency: "normal" | "urgent";
-  created_at: string;
-};
+type StaffNote = { id: string; message: string; urgency: "normal" | "urgent"; created_at: string };
 
 type Snapshot = {
-  totalToday: number;
+  periodLabel: string;
+  totalAppts: number;
   scheduled: number;
   completed: number;
   cancelled: number;
   noShow: number;
-  revenueToday: number;
+  revenue: number;
   lowStockItems: { id: string; item_name: string; qty: number; reorder_level: number }[];
   pendingDuesTotal: number;
-  revenueTrend: { day: string; amount: number }[];
-  weeklyAppointments: { day: string; count: number }[];
+  revenueTrend: { day: string; date: string; amount: number }[];
+  weeklyAppointments: { day: string; date: string; count: number }[];
   topLocalities: { locality: string; count: number }[];
   paymentMethods: { name: string; value: number }[];
   collectionRatePct: number;
-  byDoctor: { name: string; specialty: string; revenue: number; patients: number }[];
+  byDoctor: { id: string; name: string; specialty: string; revenue: number }[];
   labReferrals: { doctor: string; lab: string; count: number }[];
 };
 
@@ -48,13 +44,7 @@ const STATUS_COLORS: Record<string, string> = {
   Cancelled: "#B5563C",
   "No-show": "#D8B4A0",
 };
-
-const METHOD_COLORS: Record<string, string> = {
-  Cash: "#1D7874",
-  UPI: "#6D5DD3",
-  Card: "#D6537A",
-};
-
+const METHOD_COLORS: Record<string, string> = { Cash: "#1D7874", UPI: "#6D5DD3", Card: "#D6537A" };
 const PIN_COLORS = [
   { bg: "bg-teal", text: "text-white" },
   { bg: "bg-violet", text: "text-white" },
@@ -62,37 +52,21 @@ const PIN_COLORS = [
   { bg: "bg-amber-600", text: "text-white" },
   { bg: "bg-sage", text: "text-white" },
 ];
-
 const DOCTOR_COLORS = ["#1D7874", "#6D5DD3", "#D6537A", "#D97706", "#5C7A6E", "#B5563C"];
-
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 function ProgressRing({ pct, label, sub }: { pct: number; label: string; sub: string }) {
   const clamped = Math.max(0, Math.min(100, pct));
-  const radius = 42;
+  const radius = 40;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (clamped / 100) * circumference;
   const color = clamped >= 70 ? "#1D7874" : clamped >= 40 ? "#D97706" : "#B5563C";
-
   return (
-    <div className="flex items-center gap-4">
-      <svg width="100" height="100" viewBox="0 0 100 100" className="shrink-0">
+    <div className="flex items-center gap-3">
+      <svg width="92" height="92" viewBox="0 0 100 100" className="shrink-0">
         <circle cx="50" cy="50" r={radius} stroke="#E4DED2" strokeWidth="10" fill="none" />
-        <circle
-          cx="50"
-          cy="50"
-          r={radius}
-          stroke={color}
-          strokeWidth="10"
-          fill="none"
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-          strokeLinecap="round"
-          transform="rotate(-90 50 50)"
-        />
-        <text x="50" y="55" textAnchor="middle" fontSize="20" fontWeight="700" fill="#1C2321">
-          {clamped.toFixed(0)}%
-        </text>
+        <circle cx="50" cy="50" r={radius} stroke={color} strokeWidth="10" fill="none" strokeDasharray={circumference} strokeDashoffset={offset} strokeLinecap="round" transform="rotate(-90 50 50)" />
+        <text x="50" y="55" textAnchor="middle" fontSize="20" fontWeight="700" fill="#1C2321">{clamped.toFixed(0)}%</text>
       </svg>
       <div>
         <p className="font-medium text-sm">{label}</p>
@@ -106,15 +80,36 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
   const [open, setOpen] = useState(false);
   const [data, setData] = useState<Snapshot | null>(null);
   const [notes, setNotes] = useState<StaffNote[]>([]);
+  const [selectedDoctorId, setSelectedDoctorId] = useState<string | null>(null);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
   const load = async () => {
     const today = new Date().toISOString().slice(0, 10);
+    const activeDate = selectedDate ?? today;
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
     const sevenDaysAgoStr = sevenDaysAgo.toISOString().slice(0, 10);
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().slice(0, 10);
+
+    let apptQ = supabase.from("appointments").select("status").eq("clinic_id", clinicId).eq("appointment_date", activeDate);
+    let payQ = supabase.from("payments").select("amount").eq("clinic_id", clinicId).gte("paid_at", activeDate).lt("paid_at", activeDate + "T23:59:59");
+    let invQ = supabase.from("invoices").select("total_amount, payments(amount)").eq("clinic_id", clinicId).in("status", ["unpaid", "partial"]);
+    let trendQ = supabase.from("payments").select("amount, paid_at").eq("clinic_id", clinicId).gte("paid_at", sevenDaysAgoStr);
+    let weekQ = supabase.from("appointments").select("appointment_date").eq("clinic_id", clinicId).gte("appointment_date", sevenDaysAgoStr);
+    let methodQ = supabase.from("payments").select("amount, payment_method").eq("clinic_id", clinicId).gte("paid_at", thirtyDaysAgoStr);
+    let allInvQ = supabase.from("invoices").select("total_amount, payments(amount)").eq("clinic_id", clinicId);
+
+    if (selectedDoctorId) {
+      apptQ = apptQ.eq("doctor_id", selectedDoctorId);
+      payQ = payQ.eq("doctor_id", selectedDoctorId);
+      invQ = invQ.eq("doctor_id", selectedDoctorId);
+      trendQ = trendQ.eq("doctor_id", selectedDoctorId);
+      weekQ = weekQ.eq("doctor_id", selectedDoctorId);
+      methodQ = methodQ.eq("doctor_id", selectedDoctorId);
+      allInvQ = allInvQ.eq("doctor_id", selectedDoctorId);
+    }
 
     const [
       { data: appts },
@@ -131,18 +126,18 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
       { data: doctorInvoices },
       { data: labReferralRows },
     ] = await Promise.all([
-      supabase.from("appointments").select("status").eq("clinic_id", clinicId).eq("appointment_date", today),
-      supabase.from("payments").select("amount").eq("clinic_id", clinicId).gte("paid_at", today),
+      apptQ,
+      payQ,
       supabase.from("inventory_items").select("id, item_name, reorder_level, inventory_batches(quantity)").eq("clinic_id", clinicId),
-      supabase.from("invoices").select("total_amount, payments(amount)").eq("clinic_id", clinicId).in("status", ["unpaid", "partial"]),
-      supabase.from("invoices").select("total_amount, payments(amount)").eq("clinic_id", clinicId),
-      supabase.from("payments").select("amount, paid_at").eq("clinic_id", clinicId).gte("paid_at", sevenDaysAgoStr),
-      supabase.from("appointments").select("appointment_date").eq("clinic_id", clinicId).gte("appointment_date", sevenDaysAgoStr),
+      invQ,
+      allInvQ,
+      trendQ,
+      weekQ,
       supabase.from("staff_notes").select("id, message, urgency, created_at").eq("clinic_id", clinicId).eq("is_read", false).order("created_at", { ascending: false }),
       supabase.from("patients").select("locality").eq("clinic_id", clinicId).not("locality", "is", null),
-      supabase.from("payments").select("amount, payment_method").eq("clinic_id", clinicId).gte("paid_at", thirtyDaysAgoStr),
+      methodQ,
       supabase.from("doctors").select("id, name, specialty").eq("clinic_id", clinicId),
-      supabase.from("invoices").select("doctor_id, total_amount, payments(amount), doctors(name)").eq("clinic_id", clinicId),
+      supabase.from("invoices").select("doctor_id, total_amount, payments(amount)").eq("clinic_id", clinicId),
       supabase.from("appointments").select("doctor_id, lab_name, doctors(name)").eq("clinic_id", clinicId).eq("referred_to_lab", true).not("lab_name", "is", null),
     ]);
 
@@ -154,7 +149,7 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
       else if (a.status === "no_show") counts.noShow++;
     });
 
-    const revenueToday = (payments ?? []).reduce((s: number, p: any) => s + Number(p.amount), 0);
+    const revenue = (payments ?? []).reduce((s: number, p: any) => s + Number(p.amount), 0);
 
     const lowStockItems = (items ?? [])
       .map((item: any) => {
@@ -187,8 +182,9 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
       const day = p.paid_at.slice(0, 10);
       if (day in revenueByDay) revenueByDay[day] += Number(p.amount);
     });
-    const revenueTrend = Object.entries(revenueByDay).map(([day, amount]) => ({
-      day: DAY_LABELS[new Date(day).getDay()],
+    const revenueTrend = Object.entries(revenueByDay).map(([date, amount]) => ({
+      day: DAY_LABELS[new Date(date).getDay()],
+      date,
       amount,
     }));
 
@@ -201,8 +197,9 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
     (weekAppts ?? []).forEach((a: any) => {
       if (a.appointment_date in apptsByDay) apptsByDay[a.appointment_date]++;
     });
-    const weeklyAppointments = Object.entries(apptsByDay).map(([day, count]) => ({
-      day: DAY_LABELS[new Date(day).getDay()],
+    const weeklyAppointments = Object.entries(apptsByDay).map(([date, count]) => ({
+      day: DAY_LABELS[new Date(date).getDay()],
+      date,
       count,
     }));
 
@@ -222,30 +219,21 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
       const label = p.payment_method === "upi" ? "UPI" : p.payment_method === "card" ? "Card" : "Cash";
       methodTotals[label] += Number(p.amount);
     });
-    const paymentMethods = Object.entries(methodTotals)
-      .map(([name, value]) => ({ name, value }))
-      .filter((m) => m.value > 0);
+    const paymentMethods = Object.entries(methodTotals).map(([name, value]) => ({ name, value })).filter((m) => m.value > 0);
 
-    // Revenue + patient count per doctor
     const doctorRevenue: Record<string, number> = {};
-    const doctorPatientSets: Record<string, Set<string>> = {};
     (doctorInvoices ?? []).forEach((inv: any) => {
       if (!inv.doctor_id) return;
       const paid = (inv.payments ?? []).reduce((s: number, p: any) => s + Number(p.amount), 0);
       doctorRevenue[inv.doctor_id] = (doctorRevenue[inv.doctor_id] ?? 0) + paid;
     });
     const byDoctor = (doctorRows ?? [])
-      .map((d: any) => ({
-        name: d.name,
-        specialty: d.specialty ?? "General",
-        revenue: doctorRevenue[d.id] ?? 0,
-        patients: 0,
-      }))
+      .map((d: any) => ({ id: d.id, name: d.name, specialty: d.specialty ?? "General", revenue: doctorRevenue[d.id] ?? 0 }))
       .sort((a: any, b: any) => b.revenue - a.revenue);
 
-    // Lab referrals grouped by doctor + lab
     const labCounts: Record<string, { doctor: string; lab: string; count: number }> = {};
     (labReferralRows ?? []).forEach((r: any) => {
+      if (selectedDoctorId && r.doctor_id !== selectedDoctorId) return;
       const doctorName = r.doctors?.name ?? "Unassigned";
       const lab = r.lab_name ?? "Unknown lab";
       const key = `${doctorName}|${lab}`;
@@ -254,14 +242,20 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
     });
     const labReferrals = Object.values(labCounts).sort((a, b) => b.count - a.count).slice(0, 6);
 
+    const periodLabel =
+      activeDate === today
+        ? "Today"
+        : new Date(activeDate).toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "short" });
+
     setNotes((unreadNotes as any) ?? []);
     setData({
-      totalToday: (appts ?? []).length,
+      periodLabel,
+      totalAppts: (appts ?? []).length,
       scheduled: counts.scheduled,
       completed: counts.completed,
       cancelled: counts.cancelled,
       noShow: counts.noShow,
-      revenueToday,
+      revenue,
       lowStockItems,
       pendingDuesTotal,
       revenueTrend,
@@ -295,7 +289,7 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
       supabase.removeChannel(channel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, clinicId]);
+  }, [open, clinicId, selectedDoctorId, selectedDate]);
 
   const pieData = data
     ? [
@@ -306,12 +300,14 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
       ].filter((d) => d.value > 0)
     : [];
 
+  const selectedDoctorName = data?.byDoctor.find((d) => d.id === selectedDoctorId)?.name;
+
   return (
     <>
       <button
         onClick={() => setOpen(true)}
         aria-label="Owner quick view"
-        className="fixed right-4 top-1/2 -translate-y-1/2 z-40 w-14 h-14 rounded-full bg-teal text-white shadow-lg flex items-center justify-center hover:opacity-90 transition"
+        className="fixed right-4 top-1/2 -translate-y-1/2 z-40 w-14 h-14 rounded-full bg-teal text-white shadow-xl flex items-center justify-center hover:opacity-90 transition"
       >
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
           <path d="M3 3v18h18" strokeLinecap="round" strokeLinejoin="round" />
@@ -327,13 +323,29 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
       {open && <div className="fixed inset-0 bg-black/30 z-40" onClick={() => setOpen(false)} />}
 
       <div
-        className={`fixed top-0 left-0 right-0 z-50 bg-sand shadow-2xl transition-transform duration-300 ease-out max-h-[92vh] overflow-y-auto rounded-b-2xl ${
+        className={`fixed top-0 left-0 right-0 z-50 bg-sand shadow-2xl transition-transform duration-300 ease-out max-h-[94vh] overflow-y-auto rounded-b-2xl ${
           open ? "translate-y-0" : "-translate-y-full"
         }`}
       >
-        <div className="p-5 max-w-4xl mx-auto">
-          <div className="flex items-center justify-between mb-5">
-            <h2 className="font-display text-xl font-semibold">Today's Snapshot</h2>
+        <div className="p-4 md:p-6 max-w-6xl mx-auto">
+          <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+            <div>
+              <h2 className="font-display text-xl font-semibold">
+                {data?.periodLabel ?? "Today"}'s Snapshot
+                {selectedDoctorName && <span className="text-violet"> · {selectedDoctorName}</span>}
+              </h2>
+              {(selectedDoctorId || selectedDate) && (
+                <button
+                  onClick={() => {
+                    setSelectedDoctorId(null);
+                    setSelectedDate(null);
+                  }}
+                  className="text-xs text-teal underline underline-offset-2 mt-0.5"
+                >
+                  Clear filters — show everything
+                </button>
+              )}
+            </div>
             <button onClick={() => setOpen(false)} className="text-ink/50 hover:text-ink text-2xl leading-none" aria-label="Close">
               ×
             </button>
@@ -342,74 +354,60 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
           {!data ? (
             <p className="text-sm text-ink/60">Loading…</p>
           ) : (
-            <div className="space-y-5">
-              {notes.length > 0 && (
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-ink/50 mb-1.5">
-                    Notes ({notes.length})
-                  </p>
-                  <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
-                    {notes.map((n) => (
-                      <div
-                        key={n.id}
-                        className={`flex items-start justify-between gap-3 rounded-lg px-4 py-2.5 ${
-                          n.urgency === "urgent" ? "bg-clay/10 border border-clay/30" : "bg-teal/10 border border-teal/30"
-                        }`}
-                      >
-                        <div>
-                          <span className={`text-xs font-semibold uppercase tracking-wide ${n.urgency === "urgent" ? "text-clay" : "text-teal"}`}>
-                            {n.urgency === "urgent" ? "Urgent" : "Note"}
-                          </span>
-                          <p className="text-sm mt-0.5">{n.message}</p>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <div className="lg:col-span-1 space-y-4">
+                {notes.length > 0 && (
+                  <div className="card p-4 shadow-lg">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-ink/50 mb-1.5">Notes ({notes.length})</p>
+                    <div className="space-y-2 max-h-32 overflow-y-auto pr-1">
+                      {notes.map((n) => (
+                        <div key={n.id} className={`flex items-start justify-between gap-2 rounded-lg px-3 py-2 ${n.urgency === "urgent" ? "bg-clay/10 border border-clay/30" : "bg-teal/10 border border-teal/30"}`}>
+                          <div>
+                            <span className={`text-[10px] font-semibold uppercase tracking-wide ${n.urgency === "urgent" ? "text-clay" : "text-teal"}`}>
+                              {n.urgency === "urgent" ? "Urgent" : "Note"}
+                            </span>
+                            <p className="text-xs mt-0.5">{n.message}</p>
+                          </div>
+                          <button onClick={() => dismissNote(n.id)} className="text-[10px] text-ink/50 hover:text-ink whitespace-nowrap">✕</button>
                         </div>
-                        <button onClick={() => dismissNote(n.id)} className="text-xs text-ink/50 hover:text-ink whitespace-nowrap">
-                          Dismiss
-                        </button>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-xl p-4 bg-teal text-white">
-                  <p className="text-xs opacity-80">Revenue today</p>
-                  <p className="font-display text-2xl font-semibold mt-1">{formatCurrency(data.revenueToday)}</p>
+                <div className="rounded-xl p-4 bg-teal text-white shadow-lg">
+                  <p className="text-xs opacity-80">Revenue — {data.periodLabel}</p>
+                  <p className="font-display text-3xl font-semibold mt-1">{formatCurrency(data.revenue)}</p>
                 </div>
-                <div className={`rounded-xl p-4 text-white ${data.pendingDuesTotal > 0 ? "bg-clay" : "bg-sage"}`}>
+                <div className={`rounded-xl p-4 text-white shadow-lg ${data.pendingDuesTotal > 0 ? "bg-clay" : "bg-sage"}`}>
                   <p className="text-xs opacity-80">Pending dues</p>
                   <p className="font-display text-2xl font-semibold mt-1">{formatCurrency(data.pendingDuesTotal)}</p>
                 </div>
-              </div>
-
-              <div className="card p-4 flex flex-wrap items-center justify-between gap-4">
-                <ProgressRing
-                  pct={data.collectionRatePct}
-                  label="Collection rate"
-                  sub="of all billed amount collected"
-                />
-                <div className="flex gap-3">
-                  <div className="rounded-xl px-4 py-3 bg-violet text-white text-center">
-                    <p className="font-display text-xl font-semibold">{data.totalToday}</p>
-                    <p className="text-[11px] opacity-80">appts today</p>
+                <div className="card p-4 shadow-lg">
+                  <ProgressRing pct={data.collectionRatePct} label="Collection rate" sub="of billed amount collected" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-xl px-3 py-3 bg-violet text-white text-center shadow-lg">
+                    <p className="font-display text-xl font-semibold">{data.totalAppts}</p>
+                    <p className="text-[10px] opacity-80">appts</p>
                   </div>
-                  <div className="rounded-xl px-4 py-3 bg-rose text-white text-center">
+                  <div className="rounded-xl px-3 py-3 bg-rose text-white text-center shadow-lg">
                     <p className="font-display text-xl font-semibold">{data.lowStockItems.length}</p>
-                    <p className="text-[11px] opacity-80">low stock</p>
+                    <p className="text-[10px] opacity-80">low stock</p>
                   </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="card p-4">
-                  <p className="text-sm text-ink/60 mb-2">Appointments today ({data.totalToday})</p>
+              <div className="lg:col-span-1 space-y-4">
+                <div className="card p-4 shadow-lg">
+                  <p className="text-sm text-ink/60 mb-2">Appointments — {data.periodLabel} ({data.totalAppts})</p>
                   {pieData.length === 0 ? (
-                    <p className="text-sm text-ink/40 py-6 text-center">No appointments today yet</p>
+                    <p className="text-sm text-ink/40 py-6 text-center">No appointments</p>
                   ) : (
-                    <div style={{ width: "100%", height: 160 }}>
+                    <div style={{ width: "100%", height: 150 }}>
                       <ResponsiveContainer>
                         <PieChart>
-                          <Pie data={pieData} dataKey="value" nameKey="name" innerRadius={40} outerRadius={62} paddingAngle={2}>
+                          <Pie data={pieData} dataKey="value" nameKey="name" innerRadius={38} outerRadius={58} paddingAngle={2}>
                             {pieData.map((entry) => (
                               <Cell key={entry.name} fill={STATUS_COLORS[entry.name]} />
                             ))}
@@ -419,53 +417,52 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
                       </ResponsiveContainer>
                     </div>
                   )}
-                  <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-xs text-ink/60">
-                    {pieData.map((d) => (
-                      <span key={d.name} className="flex items-center gap-1">
-                        <span className="w-2 h-2 rounded-full inline-block" style={{ background: STATUS_COLORS[d.name] }} />
-                        {d.name}: {d.value}
-                      </span>
-                    ))}
-                  </div>
                 </div>
 
-                <div className="card p-4">
+                <div className="card p-4 shadow-lg">
                   <p className="text-sm text-ink/60 mb-2">Revenue, last 7 days</p>
-                  <div style={{ width: "100%", height: 160 }}>
+                  <div style={{ width: "100%", height: 140 }}>
                     <ResponsiveContainer>
-                      <LineChart data={data.revenueTrend}>
+                      <LineChart data={data.revenueTrend} onClick={(e: any) => {
+                        const point = e?.activePayload?.[0]?.payload;
+                        if (point) setSelectedDate(point.date === selectedDate ? null : point.date);
+                      }}>
                         <XAxis dataKey="day" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
                         <YAxis hide />
                         <Tooltip />
-                        <Line type="monotone" dataKey="amount" stroke="#1D7874" strokeWidth={2} dot={{ r: 3 }} />
+                        <Line type="monotone" dataKey="amount" stroke="#1D7874" strokeWidth={2} dot={{ r: 3, cursor: "pointer" }} />
                       </LineChart>
                     </ResponsiveContainer>
                   </div>
                 </div>
 
-                <div className="card p-4">
-                  <p className="text-sm text-ink/60 mb-2">Appointments this week</p>
-                  <div style={{ width: "100%", height: 160 }}>
+                <div className="card p-4 shadow-lg">
+                  <p className="text-sm text-ink/60 mb-2">Appointments this week — tap a day</p>
+                  <div style={{ width: "100%", height: 140 }}>
                     <ResponsiveContainer>
                       <BarChart data={data.weeklyAppointments}>
                         <XAxis dataKey="day" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
                         <YAxis hide />
                         <Tooltip />
-                        <Bar dataKey="count" fill="#6D5DD3" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="count" radius={[4, 4, 0, 0]} cursor="pointer" onClick={(entry: any) => setSelectedDate(entry.date === selectedDate ? null : entry.date)}>
+                          {data.weeklyAppointments.map((entry) => (
+                            <Cell key={entry.date} fill={entry.date === selectedDate ? "#D6537A" : "#6D5DD3"} />
+                          ))}
+                        </Bar>
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
                 </div>
 
-                <div className="card p-4">
+                <div className="card p-4 shadow-lg">
                   <p className="text-sm text-ink/60 mb-2">Payment methods (30 days)</p>
                   {data.paymentMethods.length === 0 ? (
-                    <p className="text-sm text-ink/40 py-6 text-center">No payments yet</p>
+                    <p className="text-sm text-ink/40 py-6 text-center">No payments</p>
                   ) : (
-                    <div style={{ width: "100%", height: 160 }}>
+                    <div style={{ width: "100%", height: 140 }}>
                       <ResponsiveContainer>
                         <PieChart>
-                          <Pie data={data.paymentMethods} dataKey="value" nameKey="name" innerRadius={40} outerRadius={62} paddingAngle={2}>
+                          <Pie data={data.paymentMethods} dataKey="value" nameKey="name" innerRadius={38} outerRadius={58} paddingAngle={2}>
                             {data.paymentMethods.map((entry) => (
                               <Cell key={entry.name} fill={METHOD_COLORS[entry.name]} />
                             ))}
@@ -475,94 +472,80 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
                       </ResponsiveContainer>
                     </div>
                   )}
-                  <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-xs text-ink/60">
-                    {data.paymentMethods.map((d) => (
-                      <span key={d.name} className="flex items-center gap-1">
-                        <span className="w-2 h-2 rounded-full inline-block" style={{ background: METHOD_COLORS[d.name] }} />
-                        {d.name}
-                      </span>
-                    ))}
-                  </div>
                 </div>
               </div>
 
-              {data.byDoctor.length > 0 && (
-                <div className="card p-4">
-                  <p className="text-sm text-ink/60 mb-3">Business by doctor</p>
+              <div className="lg:col-span-1 space-y-4">
+                <div className="card p-4 shadow-lg">
+                  <p className="text-sm text-ink/60 mb-3">Business by doctor — tap to filter</p>
                   <div className="space-y-2">
                     {data.byDoctor.map((d, i) => (
-                      <div key={d.name} className="flex items-center gap-3">
-                        <span
-                          className="w-2.5 h-2.5 rounded-full shrink-0"
-                          style={{ background: DOCTOR_COLORS[i % DOCTOR_COLORS.length] }}
-                        />
+                      <button
+                        key={d.id}
+                        onClick={() => setSelectedDoctorId(selectedDoctorId === d.id ? null : d.id)}
+                        className={`w-full flex items-center gap-3 rounded-lg px-3 py-2 text-left transition ${
+                          selectedDoctorId === d.id ? "bg-violet/15 border border-violet" : "bg-sand hover:bg-violet/5"
+                        }`}
+                      >
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: DOCTOR_COLORS[i % DOCTOR_COLORS.length] }} />
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium truncate">{d.name}</p>
                           <p className="text-xs text-violet">{d.specialty}</p>
                         </div>
-                        <p className="font-display text-sm font-semibold whitespace-nowrap">
-                          {formatCurrency(d.revenue)}
-                        </p>
-                      </div>
+                        <p className="font-display text-sm font-semibold whitespace-nowrap">{formatCurrency(d.revenue)}</p>
+                      </button>
                     ))}
                   </div>
                 </div>
-              )}
 
-              {data.labReferrals.length > 0 && (
-                <div className="card p-4">
-                  <p className="text-sm text-ink/60 mb-3">Lab referrals by doctor</p>
-                  <div className="space-y-1.5">
-                    {data.labReferrals.map((r, i) => (
-                      <div key={`${r.doctor}-${r.lab}`} className="flex items-center justify-between text-sm bg-rose/5 border border-rose/20 rounded-lg px-3 py-2">
-                        <span>
-                          <span className="text-violet font-medium">{r.doctor}</span>
-                          <span className="text-ink/50"> → </span>
-                          <span>{r.lab}</span>
-                        </span>
-                        <span className="font-semibold text-rose">{r.count}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div className="card p-4">
-                <p className="text-sm text-ink/60 mb-3">Where patients come from</p>
-                {data.topLocalities.length === 0 ? (
-                  <p className="text-sm text-ink/40 py-4 text-center">
-                    No locality data yet — add a locality when creating patients
-                  </p>
-                ) : (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                    {data.topLocalities.map((loc, i) => {
-                      const c = PIN_COLORS[i % PIN_COLORS.length];
-                      return (
-                        <div key={loc.locality} className={`rounded-xl p-3 ${c.bg} ${c.text}`}>
-                          <p className="font-display text-2xl font-semibold">{loc.count}</p>
-                          <p className="text-xs opacity-90 truncate">{loc.locality}</p>
-                          <p className="text-[10px] opacity-70">patients</p>
+                {data.labReferrals.length > 0 && (
+                  <div className="card p-4 shadow-lg">
+                    <p className="text-sm text-ink/60 mb-3">Lab referrals</p>
+                    <div className="space-y-1.5">
+                      {data.labReferrals.map((r) => (
+                        <div key={`${r.doctor}-${r.lab}`} className="flex items-center justify-between text-xs bg-rose/5 border border-rose/20 rounded-lg px-3 py-2">
+                          <span><span className="text-violet font-medium">{r.doctor}</span> → {r.lab}</span>
+                          <span className="font-semibold text-rose">{r.count}</span>
                         </div>
-                      );
-                    })}
+                      ))}
+                    </div>
                   </div>
                 )}
-              </div>
 
-              <div className="card p-4">
-                <p className="text-sm text-ink/60 mb-2">Low stock ({data.lowStockItems.length})</p>
-                {data.lowStockItems.length === 0 ? (
-                  <p className="text-sm text-ink/40 py-2">All stocked up 👍</p>
-                ) : (
-                  <ul className="space-y-1">
-                    {data.lowStockItems.map((item) => (
-                      <li key={item.id} className="flex items-center justify-between text-sm bg-clay/10 text-clay rounded-lg px-3 py-2">
-                        <span>{item.item_name}</span>
-                        <span className="font-medium">{item.qty}/{item.reorder_level}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
+                <div className="card p-4 shadow-lg">
+                  <p className="text-sm text-ink/60 mb-3">Where patients come from</p>
+                  {data.topLocalities.length === 0 ? (
+                    <p className="text-sm text-ink/40 py-2">No locality data yet</p>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-2">
+                      {data.topLocalities.map((loc, i) => {
+                        const c = PIN_COLORS[i % PIN_COLORS.length];
+                        return (
+                          <div key={loc.locality} className={`rounded-lg p-2.5 ${c.bg} ${c.text}`}>
+                            <p className="font-display text-lg font-semibold">{loc.count}</p>
+                            <p className="text-[10px] opacity-90 truncate">{loc.locality}</p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <div className="card p-4 shadow-lg">
+                  <p className="text-sm text-ink/60 mb-2">Low stock ({data.lowStockItems.length})</p>
+                  {data.lowStockItems.length === 0 ? (
+                    <p className="text-sm text-ink/40 py-2">All stocked up 👍</p>
+                  ) : (
+                    <ul className="space-y-1">
+                      {data.lowStockItems.map((item) => (
+                        <li key={item.id} className="flex items-center justify-between text-xs bg-clay/10 text-clay rounded-lg px-3 py-2">
+                          <span>{item.item_name}</span>
+                          <span className="font-medium">{item.qty}/{item.reorder_level}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
               </div>
             </div>
           )}
