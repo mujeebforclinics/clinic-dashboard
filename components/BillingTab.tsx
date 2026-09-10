@@ -3,13 +3,15 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { formatCurrency } from "@/lib/format";
-import type { Invoice, Patient } from "@/lib/types";
+import type { Invoice, Patient, Doctor } from "@/lib/types";
 
 export default function BillingTab({ clinicId }: { clinicId: string }) {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
+  const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [patientId, setPatientId] = useState("");
+  const [doctorId, setDoctorId] = useState("");
   const [amount, setAmount] = useState("");
   const [saving, setSaving] = useState(false);
   const [payingId, setPayingId] = useState<string | null>(null);
@@ -18,16 +20,19 @@ export default function BillingTab({ clinicId }: { clinicId: string }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const load = async () => {
-    const [{ data: inv }, { data: pts }] = await Promise.all([
+    const [{ data: inv }, { data: pts }, { data: docs }] = await Promise.all([
       supabase
         .from("invoices")
-        .select("*, patients(full_name), payments(id, amount, payment_method, paid_at)")
+        .select("*, patients(full_name), doctors(name), payments(id, amount, payment_method, paid_at)")
         .eq("clinic_id", clinicId)
-        .order("invoice_date", { ascending: false }),
+        .order("invoice_date", { ascending: false })
+        .limit(200),
       supabase.from("patients").select("*").eq("clinic_id", clinicId),
+      supabase.from("doctors").select("*").eq("clinic_id", clinicId).order("name"),
     ]);
     setInvoices((inv as any) ?? []);
     setPatients(pts ?? []);
+    setDoctors(docs ?? []);
   };
 
   useEffect(() => {
@@ -42,6 +47,7 @@ export default function BillingTab({ clinicId }: { clinicId: string }) {
     await supabase.from("invoices").insert({
       clinic_id: clinicId,
       patient_id: patientId,
+      doctor_id: doctorId || null,
       total_amount: Number(amount),
       status: "unpaid",
     });
@@ -107,6 +113,18 @@ export default function BillingTab({ clinicId }: { clinicId: string }) {
               </option>
             ))}
           </select>
+          <select
+            className="input col-span-2"
+            value={doctorId}
+            onChange={(e) => setDoctorId(e.target.value)}
+          >
+            <option value="">Treating doctor (optional)</option>
+            {doctors.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}{d.specialty ? ` — ${d.specialty}` : ""}
+              </option>
+            ))}
+          </select>
           <input
             className="input col-span-2"
             type="number"
@@ -141,6 +159,11 @@ export default function BillingTab({ clinicId }: { clinicId: string }) {
                 <div>
                   <p className="font-medium">
                     {inv.patients?.full_name ?? "Unknown"}
+                    {inv.doctors?.name && (
+                      <span className="text-violet text-xs font-normal ml-2">
+                        {inv.doctors.name}
+                      </span>
+                    )}
                   </p>
                   <p className="text-sm text-ink/60">
                     {inv.invoice_date} · {formatCurrency(Number(inv.total_amount))} total ·{" "}

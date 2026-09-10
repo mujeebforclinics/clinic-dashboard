@@ -38,6 +38,8 @@ type Snapshot = {
   topLocalities: { locality: string; count: number }[];
   paymentMethods: { name: string; value: number }[];
   collectionRatePct: number;
+  byDoctor: { name: string; specialty: string; revenue: number; patients: number }[];
+  labReferrals: { doctor: string; lab: string; count: number }[];
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -60,6 +62,8 @@ const PIN_COLORS = [
   { bg: "bg-amber-600", text: "text-white" },
   { bg: "bg-sage", text: "text-white" },
 ];
+
+const DOCTOR_COLORS = ["#1D7874", "#6D5DD3", "#D6537A", "#D97706", "#5C7A6E", "#B5563C"];
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -123,6 +127,9 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
       { data: unreadNotes },
       { data: localityRows },
       { data: methodRows },
+      { data: doctorRows },
+      { data: doctorInvoices },
+      { data: labReferralRows },
     ] = await Promise.all([
       supabase.from("appointments").select("status").eq("clinic_id", clinicId).eq("appointment_date", today),
       supabase.from("payments").select("amount").eq("clinic_id", clinicId).gte("paid_at", today),
@@ -134,6 +141,9 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
       supabase.from("staff_notes").select("id, message, urgency, created_at").eq("clinic_id", clinicId).eq("is_read", false).order("created_at", { ascending: false }),
       supabase.from("patients").select("locality").eq("clinic_id", clinicId).not("locality", "is", null),
       supabase.from("payments").select("amount, payment_method").eq("clinic_id", clinicId).gte("paid_at", thirtyDaysAgoStr),
+      supabase.from("doctors").select("id, name, specialty").eq("clinic_id", clinicId),
+      supabase.from("invoices").select("doctor_id, total_amount, payments(amount), doctors(name)").eq("clinic_id", clinicId),
+      supabase.from("appointments").select("doctor_id, lab_name, doctors(name)").eq("clinic_id", clinicId).eq("referred_to_lab", true).not("lab_name", "is", null),
     ]);
 
     const counts = { scheduled: 0, completed: 0, cancelled: 0, noShow: 0 };
@@ -216,6 +226,34 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
       .map(([name, value]) => ({ name, value }))
       .filter((m) => m.value > 0);
 
+    // Revenue + patient count per doctor
+    const doctorRevenue: Record<string, number> = {};
+    const doctorPatientSets: Record<string, Set<string>> = {};
+    (doctorInvoices ?? []).forEach((inv: any) => {
+      if (!inv.doctor_id) return;
+      const paid = (inv.payments ?? []).reduce((s: number, p: any) => s + Number(p.amount), 0);
+      doctorRevenue[inv.doctor_id] = (doctorRevenue[inv.doctor_id] ?? 0) + paid;
+    });
+    const byDoctor = (doctorRows ?? [])
+      .map((d: any) => ({
+        name: d.name,
+        specialty: d.specialty ?? "General",
+        revenue: doctorRevenue[d.id] ?? 0,
+        patients: 0,
+      }))
+      .sort((a: any, b: any) => b.revenue - a.revenue);
+
+    // Lab referrals grouped by doctor + lab
+    const labCounts: Record<string, { doctor: string; lab: string; count: number }> = {};
+    (labReferralRows ?? []).forEach((r: any) => {
+      const doctorName = r.doctors?.name ?? "Unassigned";
+      const lab = r.lab_name ?? "Unknown lab";
+      const key = `${doctorName}|${lab}`;
+      if (!labCounts[key]) labCounts[key] = { doctor: doctorName, lab, count: 0 };
+      labCounts[key].count++;
+    });
+    const labReferrals = Object.values(labCounts).sort((a, b) => b.count - a.count).slice(0, 6);
+
     setNotes((unreadNotes as any) ?? []);
     setData({
       totalToday: (appts ?? []).length,
@@ -231,6 +269,8 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
       topLocalities,
       paymentMethods,
       collectionRatePct,
+      byDoctor,
+      labReferrals,
     });
   };
 
@@ -445,6 +485,47 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
                   </div>
                 </div>
               </div>
+
+              {data.byDoctor.length > 0 && (
+                <div className="card p-4">
+                  <p className="text-sm text-ink/60 mb-3">Business by doctor</p>
+                  <div className="space-y-2">
+                    {data.byDoctor.map((d, i) => (
+                      <div key={d.name} className="flex items-center gap-3">
+                        <span
+                          className="w-2.5 h-2.5 rounded-full shrink-0"
+                          style={{ background: DOCTOR_COLORS[i % DOCTOR_COLORS.length] }}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{d.name}</p>
+                          <p className="text-xs text-violet">{d.specialty}</p>
+                        </div>
+                        <p className="font-display text-sm font-semibold whitespace-nowrap">
+                          {formatCurrency(d.revenue)}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {data.labReferrals.length > 0 && (
+                <div className="card p-4">
+                  <p className="text-sm text-ink/60 mb-3">Lab referrals by doctor</p>
+                  <div className="space-y-1.5">
+                    {data.labReferrals.map((r, i) => (
+                      <div key={`${r.doctor}-${r.lab}`} className="flex items-center justify-between text-sm bg-rose/5 border border-rose/20 rounded-lg px-3 py-2">
+                        <span>
+                          <span className="text-violet font-medium">{r.doctor}</span>
+                          <span className="text-ink/50"> → </span>
+                          <span>{r.lab}</span>
+                        </span>
+                        <span className="font-semibold text-rose">{r.count}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className="card p-4">
                 <p className="text-sm text-ink/60 mb-3">Where patients come from</p>

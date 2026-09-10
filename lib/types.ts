@@ -17,26 +17,39 @@ export type Patient = {
   created_at: string;
 };
 
+export type Doctor = {
+  id: string;
+  clinic_id: string;
+  name: string;
+  specialty: string | null;
+};
+
 export type Appointment = {
   id: string;
   clinic_id: string;
   patient_id: string;
+  doctor_id: string | null;
   appointment_date: string;
   appointment_time: string | null;
   status: "scheduled" | "completed" | "cancelled" | "no_show";
   notes: string | null;
+  referred_to_lab?: boolean;
+  lab_name?: string | null;
   patients?: { full_name: string } | null;
+  doctors?: { name: string; specialty: string | null } | null;
 };
 
 export type Invoice = {
   id: string;
   clinic_id: string;
   patient_id: string;
+  doctor_id: string | null;
   invoice_date: string;
   total_amount: number;
   status: "unpaid" | "partial" | "paid";
   patients?: { full_name: string } | null;
-  payments?: { amount: number }[];
+  doctors?: { name: string } | null;
+  payments?: { id: string; amount: number; payment_method: string; paid_at: string }[];
 };
 
 export type InventoryItem = {
