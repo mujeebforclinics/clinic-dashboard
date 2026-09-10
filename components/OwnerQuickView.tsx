@@ -31,17 +31,13 @@ type Snapshot = {
   cancelled: number;
   noShow: number;
   revenueToday: number;
-  lowStockItems: {
-    id: string;
-    item_name: string;
-    qty: number;
-    reorder_level: number;
-  }[];
+  lowStockItems: { id: string; item_name: string; qty: number; reorder_level: number }[];
   pendingDuesTotal: number;
   revenueTrend: { day: string; amount: number }[];
   weeklyAppointments: { day: string; count: number }[];
   topLocalities: { locality: string; count: number }[];
   paymentMethods: { name: string; value: number }[];
+  collectionRatePct: number;
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -57,9 +53,50 @@ const METHOD_COLORS: Record<string, string> = {
   Card: "#D6537A",
 };
 
-const LOCALITY_COLORS = ["#1D7874", "#6D5DD3", "#D6537A", "#D97706", "#5C7A6E"];
+const PIN_COLORS = [
+  { bg: "bg-teal", text: "text-white" },
+  { bg: "bg-violet", text: "text-white" },
+  { bg: "bg-rose", text: "text-white" },
+  { bg: "bg-amber-600", text: "text-white" },
+  { bg: "bg-sage", text: "text-white" },
+];
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function ProgressRing({ pct, label, sub }: { pct: number; label: string; sub: string }) {
+  const clamped = Math.max(0, Math.min(100, pct));
+  const radius = 42;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference - (clamped / 100) * circumference;
+  const color = clamped >= 70 ? "#1D7874" : clamped >= 40 ? "#D97706" : "#B5563C";
+
+  return (
+    <div className="flex items-center gap-4">
+      <svg width="100" height="100" viewBox="0 0 100 100" className="shrink-0">
+        <circle cx="50" cy="50" r={radius} stroke="#E4DED2" strokeWidth="10" fill="none" />
+        <circle
+          cx="50"
+          cy="50"
+          r={radius}
+          stroke={color}
+          strokeWidth="10"
+          fill="none"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          strokeLinecap="round"
+          transform="rotate(-90 50 50)"
+        />
+        <text x="50" y="55" textAnchor="middle" fontSize="20" fontWeight="700" fill="#1C2321">
+          {clamped.toFixed(0)}%
+        </text>
+      </svg>
+      <div>
+        <p className="font-medium text-sm">{label}</p>
+        <p className="text-xs text-ink/60">{sub}</p>
+      </div>
+    </div>
+  );
+}
 
 export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
   const [open, setOpen] = useState(false);
@@ -80,57 +117,23 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
       { data: payments },
       { data: items },
       { data: invoices },
+      { data: allInvoices },
       { data: trendPayments },
       { data: weekAppts },
       { data: unreadNotes },
       { data: localityRows },
       { data: methodRows },
     ] = await Promise.all([
-      supabase
-        .from("appointments")
-        .select("status")
-        .eq("clinic_id", clinicId)
-        .eq("appointment_date", today),
-      supabase
-        .from("payments")
-        .select("amount")
-        .eq("clinic_id", clinicId)
-        .gte("paid_at", today),
-      supabase
-        .from("inventory_items")
-        .select("id, item_name, reorder_level, inventory_batches(quantity)")
-        .eq("clinic_id", clinicId),
-      supabase
-        .from("invoices")
-        .select("total_amount, payments(amount)")
-        .eq("clinic_id", clinicId)
-        .in("status", ["unpaid", "partial"]),
-      supabase
-        .from("payments")
-        .select("amount, paid_at")
-        .eq("clinic_id", clinicId)
-        .gte("paid_at", sevenDaysAgoStr),
-      supabase
-        .from("appointments")
-        .select("appointment_date")
-        .eq("clinic_id", clinicId)
-        .gte("appointment_date", sevenDaysAgoStr),
-      supabase
-        .from("staff_notes")
-        .select("id, message, urgency, created_at")
-        .eq("clinic_id", clinicId)
-        .eq("is_read", false)
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("patients")
-        .select("locality")
-        .eq("clinic_id", clinicId)
-        .not("locality", "is", null),
-      supabase
-        .from("payments")
-        .select("amount, payment_method")
-        .eq("clinic_id", clinicId)
-        .gte("paid_at", thirtyDaysAgoStr),
+      supabase.from("appointments").select("status").eq("clinic_id", clinicId).eq("appointment_date", today),
+      supabase.from("payments").select("amount").eq("clinic_id", clinicId).gte("paid_at", today),
+      supabase.from("inventory_items").select("id, item_name, reorder_level, inventory_batches(quantity)").eq("clinic_id", clinicId),
+      supabase.from("invoices").select("total_amount, payments(amount)").eq("clinic_id", clinicId).in("status", ["unpaid", "partial"]),
+      supabase.from("invoices").select("total_amount, payments(amount)").eq("clinic_id", clinicId),
+      supabase.from("payments").select("amount, paid_at").eq("clinic_id", clinicId).gte("paid_at", sevenDaysAgoStr),
+      supabase.from("appointments").select("appointment_date").eq("clinic_id", clinicId).gte("appointment_date", sevenDaysAgoStr),
+      supabase.from("staff_notes").select("id, message, urgency, created_at").eq("clinic_id", clinicId).eq("is_read", false).order("created_at", { ascending: false }),
+      supabase.from("patients").select("locality").eq("clinic_id", clinicId).not("locality", "is", null),
+      supabase.from("payments").select("amount, payment_method").eq("clinic_id", clinicId).gte("paid_at", thirtyDaysAgoStr),
     ]);
 
     const counts = { scheduled: 0, completed: 0, cancelled: 0, noShow: 0 };
@@ -141,37 +144,28 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
       else if (a.status === "no_show") counts.noShow++;
     });
 
-    const revenueToday = (payments ?? []).reduce(
-      (s: number, p: any) => s + Number(p.amount),
-      0
-    );
+    const revenueToday = (payments ?? []).reduce((s: number, p: any) => s + Number(p.amount), 0);
 
     const lowStockItems = (items ?? [])
       .map((item: any) => {
-        const qty = (item.inventory_batches ?? []).reduce(
-          (s: number, b: any) => s + (b.quantity ?? 0),
-          0
-        );
-        return {
-          id: item.id,
-          item_name: item.item_name,
-          qty,
-          reorder_level: item.reorder_level ?? 0,
-        };
+        const qty = (item.inventory_batches ?? []).reduce((s: number, b: any) => s + (b.quantity ?? 0), 0);
+        return { id: item.id, item_name: item.item_name, qty, reorder_level: item.reorder_level ?? 0 };
       })
       .filter((i: any) => i.qty <= i.reorder_level)
       .slice(0, 5);
 
-    const pendingDuesTotal = (invoices ?? []).reduce(
-      (sum: number, inv: any) => {
-        const paid = (inv.payments ?? []).reduce(
-          (s: number, p: any) => s + Number(p.amount),
-          0
-        );
-        return sum + (Number(inv.total_amount) - paid);
-      },
-      0
-    );
+    const pendingDuesTotal = (invoices ?? []).reduce((sum: number, inv: any) => {
+      const paid = (inv.payments ?? []).reduce((s: number, p: any) => s + Number(p.amount), 0);
+      return sum + (Number(inv.total_amount) - paid);
+    }, 0);
+
+    let totalBilled = 0;
+    let totalCollected = 0;
+    (allInvoices ?? []).forEach((inv: any) => {
+      totalBilled += Number(inv.total_amount);
+      totalCollected += (inv.payments ?? []).reduce((s: number, p: any) => s + Number(p.amount), 0);
+    });
+    const collectionRatePct = totalBilled > 0 ? (totalCollected / totalBilled) * 100 : 0;
 
     const revenueByDay: Record<string, number> = {};
     for (let i = 0; i < 7; i++) {
@@ -197,12 +191,10 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
     (weekAppts ?? []).forEach((a: any) => {
       if (a.appointment_date in apptsByDay) apptsByDay[a.appointment_date]++;
     });
-    const weeklyAppointments = Object.entries(apptsByDay).map(
-      ([day, count]) => ({
-        day: DAY_LABELS[new Date(day).getDay()],
-        count,
-      })
-    );
+    const weeklyAppointments = Object.entries(apptsByDay).map(([day, count]) => ({
+      day: DAY_LABELS[new Date(day).getDay()],
+      count,
+    }));
 
     const localityCounts: Record<string, number> = {};
     (localityRows ?? []).forEach((r: any) => {
@@ -213,16 +205,11 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
     const topLocalities = Object.entries(localityCounts)
       .map(([locality, count]) => ({ locality, count }))
       .sort((a, b) => b.count - a.count)
-      .slice(0, 5);
+      .slice(0, 6);
 
     const methodTotals: Record<string, number> = { Cash: 0, UPI: 0, Card: 0 };
     (methodRows ?? []).forEach((p: any) => {
-      const label =
-        p.payment_method === "upi"
-          ? "UPI"
-          : p.payment_method === "card"
-          ? "Card"
-          : "Cash";
+      const label = p.payment_method === "upi" ? "UPI" : p.payment_method === "card" ? "Card" : "Cash";
       methodTotals[label] += Number(p.amount);
     });
     const paymentMethods = Object.entries(methodTotals)
@@ -243,6 +230,7 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
       weeklyAppointments,
       topLocalities,
       paymentMethods,
+      collectionRatePct,
     });
   };
 
@@ -254,7 +242,6 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
   useEffect(() => {
     if (!open) return;
     load();
-
     const channel = supabase
       .channel("owner-quick-view")
       .on("postgres_changes", { event: "*", schema: "public", table: "appointments" }, load)
@@ -264,7 +251,6 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "staff_notes" }, load)
       .on("postgres_changes", { event: "*", schema: "public", table: "patients" }, load)
       .subscribe();
-
     return () => {
       supabase.removeChannel(channel);
     };
@@ -298,9 +284,7 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
         )}
       </button>
 
-      {open && (
-        <div className="fixed inset-0 bg-black/30 z-40" onClick={() => setOpen(false)} />
-      )}
+      {open && <div className="fixed inset-0 bg-black/30 z-40" onClick={() => setOpen(false)} />}
 
       <div
         className={`fixed top-0 left-0 right-0 z-50 bg-sand shadow-2xl transition-transform duration-300 ease-out max-h-[92vh] overflow-y-auto rounded-b-2xl ${
@@ -310,11 +294,7 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
         <div className="p-5 max-w-4xl mx-auto">
           <div className="flex items-center justify-between mb-5">
             <h2 className="font-display text-xl font-semibold">Today's Snapshot</h2>
-            <button
-              onClick={() => setOpen(false)}
-              className="text-ink/50 hover:text-ink text-2xl leading-none"
-              aria-label="Close"
-            >
+            <button onClick={() => setOpen(false)} className="text-ink/50 hover:text-ink text-2xl leading-none" aria-label="Close">
               ×
             </button>
           </div>
@@ -324,61 +304,65 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
           ) : (
             <div className="space-y-5">
               {notes.length > 0 && (
-                <div className="space-y-2">
-                  {notes.map((n) => (
-                    <div
-                      key={n.id}
-                      className={`flex items-start justify-between gap-3 rounded-lg px-4 py-3 ${
-                        n.urgency === "urgent"
-                          ? "bg-clay/10 border border-clay/30"
-                          : "bg-teal/10 border border-teal/30"
-                      }`}
-                    >
-                      <div>
-                        <span
-                          className={`text-xs font-semibold uppercase tracking-wide ${
-                            n.urgency === "urgent" ? "text-clay" : "text-teal"
-                          }`}
-                        >
-                          {n.urgency === "urgent" ? "Urgent" : "Note"}
-                        </span>
-                        <p className="text-sm mt-0.5">{n.message}</p>
-                      </div>
-                      <button
-                        onClick={() => dismissNote(n.id)}
-                        className="text-xs text-ink/50 hover:text-ink whitespace-nowrap"
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-ink/50 mb-1.5">
+                    Notes ({notes.length})
+                  </p>
+                  <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                    {notes.map((n) => (
+                      <div
+                        key={n.id}
+                        className={`flex items-start justify-between gap-3 rounded-lg px-4 py-2.5 ${
+                          n.urgency === "urgent" ? "bg-clay/10 border border-clay/30" : "bg-teal/10 border border-teal/30"
+                        }`}
                       >
-                        Dismiss
-                      </button>
-                    </div>
-                  ))}
+                        <div>
+                          <span className={`text-xs font-semibold uppercase tracking-wide ${n.urgency === "urgent" ? "text-clay" : "text-teal"}`}>
+                            {n.urgency === "urgent" ? "Urgent" : "Note"}
+                          </span>
+                          <p className="text-sm mt-0.5">{n.message}</p>
+                        </div>
+                        <button onClick={() => dismissNote(n.id)} className="text-xs text-ink/50 hover:text-ink whitespace-nowrap">
+                          Dismiss
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
 
               <div className="grid grid-cols-2 gap-3">
-                <div className="card p-4 bg-teal/5 border border-teal/20">
-                  <p className="text-xs text-ink/60">Revenue today</p>
-                  <p className="font-display text-2xl font-semibold mt-1 text-teal">
-                    {formatCurrency(data.revenueToday)}
-                  </p>
+                <div className="rounded-xl p-4 bg-teal text-white">
+                  <p className="text-xs opacity-80">Revenue today</p>
+                  <p className="font-display text-2xl font-semibold mt-1">{formatCurrency(data.revenueToday)}</p>
                 </div>
-                <div
-                  className={`card p-4 border ${
-                    data.pendingDuesTotal > 0 ? "bg-clay/5 border-clay/20" : "bg-teal/5 border-teal/20"
-                  }`}
-                >
-                  <p className="text-xs text-ink/60">Pending dues</p>
-                  <p className={`font-display text-2xl font-semibold mt-1 ${data.pendingDuesTotal > 0 ? "text-clay" : "text-teal"}`}>
-                    {formatCurrency(data.pendingDuesTotal)}
-                  </p>
+                <div className={`rounded-xl p-4 text-white ${data.pendingDuesTotal > 0 ? "bg-clay" : "bg-sage"}`}>
+                  <p className="text-xs opacity-80">Pending dues</p>
+                  <p className="font-display text-2xl font-semibold mt-1">{formatCurrency(data.pendingDuesTotal)}</p>
+                </div>
+              </div>
+
+              <div className="card p-4 flex flex-wrap items-center justify-between gap-4">
+                <ProgressRing
+                  pct={data.collectionRatePct}
+                  label="Collection rate"
+                  sub="of all billed amount collected"
+                />
+                <div className="flex gap-3">
+                  <div className="rounded-xl px-4 py-3 bg-violet text-white text-center">
+                    <p className="font-display text-xl font-semibold">{data.totalToday}</p>
+                    <p className="text-[11px] opacity-80">appts today</p>
+                  </div>
+                  <div className="rounded-xl px-4 py-3 bg-rose text-white text-center">
+                    <p className="font-display text-xl font-semibold">{data.lowStockItems.length}</p>
+                    <p className="text-[11px] opacity-80">low stock</p>
+                  </div>
                 </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="card p-4">
-                  <p className="text-sm text-ink/60 mb-2">
-                    Appointments today ({data.totalToday})
-                  </p>
+                  <p className="text-sm text-ink/60 mb-2">Appointments today ({data.totalToday})</p>
                   {pieData.length === 0 ? (
                     <p className="text-sm text-ink/40 py-6 text-center">No appointments today yet</p>
                   ) : (
@@ -460,30 +444,28 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
                     ))}
                   </div>
                 </div>
+              </div>
 
-                <div className="card p-4 sm:col-span-2">
-                  <p className="text-sm text-ink/60 mb-2">Top localities — where patients come from</p>
-                  {data.topLocalities.length === 0 ? (
-                    <p className="text-sm text-ink/40 py-4 text-center">
-                      No locality data yet — add a locality when creating patients
-                    </p>
-                  ) : (
-                    <div style={{ width: "100%", height: 160 }}>
-                      <ResponsiveContainer>
-                        <BarChart data={data.topLocalities} layout="vertical" margin={{ left: 20 }}>
-                          <XAxis type="number" hide />
-                          <YAxis dataKey="locality" type="category" tick={{ fontSize: 12 }} axisLine={false} tickLine={false} width={100} />
-                          <Tooltip />
-                          <Bar dataKey="count" radius={[0, 4, 4, 0]}>
-                            {data.topLocalities.map((entry, i) => (
-                              <Cell key={entry.locality} fill={LOCALITY_COLORS[i % LOCALITY_COLORS.length]} />
-                            ))}
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  )}
-                </div>
+              <div className="card p-4">
+                <p className="text-sm text-ink/60 mb-3">Where patients come from</p>
+                {data.topLocalities.length === 0 ? (
+                  <p className="text-sm text-ink/40 py-4 text-center">
+                    No locality data yet — add a locality when creating patients
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {data.topLocalities.map((loc, i) => {
+                      const c = PIN_COLORS[i % PIN_COLORS.length];
+                      return (
+                        <div key={loc.locality} className={`rounded-xl p-3 ${c.bg} ${c.text}`}>
+                          <p className="font-display text-2xl font-semibold">{loc.count}</p>
+                          <p className="text-xs opacity-90 truncate">{loc.locality}</p>
+                          <p className="text-[10px] opacity-70">patients</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               <div className="card p-4">
