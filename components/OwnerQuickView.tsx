@@ -36,6 +36,11 @@ type Snapshot = {
   collectionRatePct: number;
   byDoctor: { id: string; name: string; specialty: string; revenue: number }[];
   labReferrals: { doctor: string; lab: string; count: number }[];
+  healthScore: number;
+  healthLabel: string;
+  alerts: { text: string; severity: "critical" | "attention" | "monitor" | "healthy" }[];
+  topTreatmentsToday: { treatment: string; revenue: number }[];
+  topTreatmentsWeek: { treatment: string; revenue: number }[];
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -125,6 +130,7 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
       { data: doctorRows },
       { data: doctorInvoices },
       { data: labReferralRows },
+      { data: treatmentRows },
     ] = await Promise.all([
       apptQ,
       payQ,
@@ -139,6 +145,7 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
       supabase.from("doctors").select("id, name, specialty").eq("clinic_id", clinicId),
       supabase.from("invoices").select("doctor_id, total_amount, payments(amount)").eq("clinic_id", clinicId),
       supabase.from("appointments").select("doctor_id, lab_name, doctors(name)").eq("clinic_id", clinicId).eq("referred_to_lab", true).not("lab_name", "is", null),
+      supabase.from("invoices").select("treatment, payments(amount, paid_at)").eq("clinic_id", clinicId).not("treatment", "is", null),
     ]);
 
     const counts = { scheduled: 0, completed: 0, cancelled: 0, noShow: 0 };
@@ -242,6 +249,55 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
     });
     const labReferrals = Object.values(labCounts).sort((a, b) => b.count - a.count).slice(0, 6);
 
+    // Revenue by treatment — today and last 7 days, from payments joined to invoices
+    const treatmentToday: Record<string, number> = {};
+    const treatmentWeek: Record<string, number> = {};
+    (treatmentRows ?? []).forEach((inv: any) => {
+      const name = inv.treatment;
+      if (!name) return;
+      (inv.payments ?? []).forEach((p: any) => {
+        const payDay = p.paid_at.slice(0, 10);
+        if (payDay === activeDate) {
+          treatmentToday[name] = (treatmentToday[name] ?? 0) + Number(p.amount);
+        }
+        if (payDay >= sevenDaysAgoStr) {
+          treatmentWeek[name] = (treatmentWeek[name] ?? 0) + Number(p.amount);
+        }
+      });
+    });
+    const topTreatmentsToday = Object.entries(treatmentToday)
+      .map(([treatment, revenue]) => ({ treatment, revenue }))
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 5);
+    const topTreatmentsWeek = Object.entries(treatmentWeek)
+      .map(([treatment, revenue]) => ({ treatment, revenue }))
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 5);
+
+    // Clinic Health Score — composite of collection rate, appointment
+    // completion, no-shows, and stock health. All from data already fetched.
+    const apptTotalForRate = counts.completed + counts.cancelled + counts.noShow + counts.scheduled;
+    const apptCompletionPct = apptTotalForRate > 0
+      ? (counts.completed / apptTotalForRate) * 100
+      : 100;
+    const noShowPct = apptTotalForRate > 0 ? (counts.noShow / apptTotalForRate) * 100 : 0;
+    const noShowHealthPct = Math.max(0, 100 - noShowPct * 3);
+    const stockHealthPct = Math.max(0, 100 - lowStockItems.length * 15);
+    const healthScore = Math.round(
+      collectionRatePct * 0.35 + apptCompletionPct * 0.25 + noShowHealthPct * 0.2 + stockHealthPct * 0.2
+    );
+    const healthLabel = healthScore >= 85 ? "Excellent" : healthScore >= 70 ? "Healthy" : healthScore >= 50 ? "Needs attention" : "Critical";
+
+    const alerts: { text: string; severity: "critical" | "attention" | "monitor" | "healthy" }[] = [];
+    if (pendingDuesTotal > 20000) alerts.push({ text: `${formatCurrency(pendingDuesTotal)} outstanding across patients`, severity: "critical" });
+    else if (pendingDuesTotal > 5000) alerts.push({ text: `${formatCurrency(pendingDuesTotal)} outstanding across patients`, severity: "attention" });
+    if (lowStockItems.length >= 3) alerts.push({ text: `${lowStockItems.length} items critically low on stock`, severity: "critical" });
+    else if (lowStockItems.length > 0) alerts.push({ text: `${lowStockItems.length} item${lowStockItems.length > 1 ? "s" : ""} running low on stock`, severity: "attention" });
+    if (counts.noShow >= 3) alerts.push({ text: `${counts.noShow} no-shows — higher than usual`, severity: "attention" });
+    if (counts.cancelled >= 3) alerts.push({ text: `${counts.cancelled} cancelled appointments`, severity: "monitor" });
+    if (collectionRatePct < 50 && totalBilled > 0) alerts.push({ text: `Collection rate is low (${collectionRatePct.toFixed(0)}%)`, severity: "critical" });
+    if (alerts.length === 0) alerts.push({ text: "Everything looks healthy — no issues detected", severity: "healthy" });
+
     const periodLabel =
       activeDate === today
         ? "Today"
@@ -265,6 +321,11 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
       collectionRatePct,
       byDoctor,
       labReferrals,
+      healthScore,
+      healthLabel,
+      alerts,
+      topTreatmentsToday,
+      topTreatmentsWeek,
     });
   };
 
@@ -354,7 +415,54 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
           {!data ? (
             <p className="text-sm text-ink/60">Loading…</p>
           ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="space-y-4">
+              {/* Clinic Health Score + Attention Required — full width, most important glance info */}
+              <div className="card p-5 shadow-lg">
+                <div className="flex flex-col sm:flex-row items-center gap-6">
+                  <div className="shrink-0 flex flex-col items-center">
+                    <svg width="120" height="120" viewBox="0 0 100 100">
+                      <circle cx="50" cy="50" r="42" stroke="#E4DED2" strokeWidth="10" fill="none" />
+                      <circle
+                        cx="50" cy="50" r="42"
+                        stroke={data.healthScore >= 85 ? "#1D7874" : data.healthScore >= 70 ? "#5C7A6E" : data.healthScore >= 50 ? "#D97706" : "#B5563C"}
+                        strokeWidth="10" fill="none"
+                        strokeDasharray={2 * Math.PI * 42}
+                        strokeDashoffset={2 * Math.PI * 42 - (Math.max(0, Math.min(100, data.healthScore)) / 100) * (2 * Math.PI * 42)}
+                        strokeLinecap="round" transform="rotate(-90 50 50)"
+                      />
+                      <text x="50" y="48" textAnchor="middle" fontSize="26" fontWeight="700" fill="#1C2321">{data.healthScore}</text>
+                      <text x="50" y="65" textAnchor="middle" fontSize="9" fill="#6b6156">/ 100</text>
+                    </svg>
+                    <p className="text-sm font-semibold mt-1">Clinic Health Score</p>
+                    <p className={`text-xs font-medium ${data.healthScore >= 70 ? "text-teal" : data.healthScore >= 50 ? "text-amber-700" : "text-clay"}`}>
+                      {data.healthLabel}
+                    </p>
+                  </div>
+                  <div className="flex-1 w-full">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-ink/50 mb-2">Attention Required</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {data.alerts.map((a, i) => {
+                        const style =
+                          a.severity === "critical" ? "bg-clay/10 border-clay/30 text-clay" :
+                          a.severity === "attention" ? "bg-amber-100 border-amber-300 text-amber-800" :
+                          a.severity === "monitor" ? "bg-violet/10 border-violet/30 text-violet" :
+                          "bg-teal/10 border-teal/30 text-teal";
+                        const dot =
+                          a.severity === "critical" ? "🔴" :
+                          a.severity === "attention" ? "🟠" :
+                          a.severity === "monitor" ? "🟡" : "🟢";
+                        return (
+                          <div key={i} className={`text-sm rounded-lg px-3 py-2 border ${style}`}>
+                            {dot} {a.text}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
               <div className="lg:col-span-1 space-y-4">
                 {notes.length > 0 && (
                   <div className="card p-4 shadow-lg">
@@ -473,6 +581,32 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
                     </div>
                   )}
                 </div>
+
+                <div className="card p-4 shadow-lg">
+                  <p className="text-sm text-ink/60 mb-1">Top treatments by revenue</p>
+                  <p className="text-xs text-teal font-medium mb-2">
+                    {data.periodLabel}: {data.topTreatmentsToday[0] ? `${data.topTreatmentsToday[0].treatment} — ${formatCurrency(data.topTreatmentsToday[0].revenue)}` : "No sales yet"}
+                  </p>
+                  {data.topTreatmentsWeek.length === 0 ? (
+                    <p className="text-sm text-ink/40 py-4 text-center">No treatment data yet</p>
+                  ) : (
+                    <div style={{ width: "100%", height: 160 }}>
+                      <ResponsiveContainer>
+                        <BarChart data={data.topTreatmentsWeek} layout="vertical" margin={{ left: 10 }}>
+                          <XAxis type="number" hide />
+                          <YAxis dataKey="treatment" type="category" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} width={110} />
+                          <Tooltip formatter={(v: number) => formatCurrency(v)} />
+                          <Bar dataKey="revenue" radius={[0, 4, 4, 0]}>
+                            {data.topTreatmentsWeek.map((entry, i) => (
+                              <Cell key={entry.treatment} fill={DOCTOR_COLORS[i % DOCTOR_COLORS.length]} />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+                  <p className="text-[10px] text-ink/40 mt-1">Last 7 days, by revenue collected</p>
+                </div>
               </div>
 
               <div className="lg:col-span-1 space-y-4">
@@ -547,6 +681,7 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
                   )}
                 </div>
               </div>
+            </div>
             </div>
           )}
         </div>

@@ -5,6 +5,14 @@ import { supabase } from "@/lib/supabaseClient";
 import { formatCurrency } from "@/lib/format";
 import type { Invoice, Patient, Doctor } from "@/lib/types";
 
+const TREATMENTS = [
+  "Consultation", "Scaling & Polishing", "Cavity Filling", "Root Canal Treatment",
+  "Tooth Extraction", "Braces Adjustment", "Teeth Whitening", "Dental X-Ray",
+  "Crown Fitting", "Wisdom Tooth Removal", "Fluoride Treatment", "Denture Fitting",
+  "Dental Implant", "Porcelain Veneers", "Invisalign Session", "Gum Treatment",
+  "Night Guard Fitting",
+];
+
 export default function BillingTab({ clinicId }: { clinicId: string }) {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
@@ -12,6 +20,7 @@ export default function BillingTab({ clinicId }: { clinicId: string }) {
   const [showForm, setShowForm] = useState(false);
   const [patientId, setPatientId] = useState("");
   const [doctorId, setDoctorId] = useState("");
+  const [treatment, setTreatment] = useState("");
   const [amount, setAmount] = useState("");
   const [saving, setSaving] = useState(false);
   const [payingId, setPayingId] = useState<string | null>(null);
@@ -48,11 +57,13 @@ export default function BillingTab({ clinicId }: { clinicId: string }) {
       clinic_id: clinicId,
       patient_id: patientId,
       doctor_id: doctorId || null,
+      treatment: treatment || null,
       total_amount: Number(amount),
       status: "unpaid",
     });
     setSaving(false);
     setAmount("");
+    setTreatment("");
     setShowForm(false);
     load();
   };
@@ -126,6 +137,16 @@ export default function BillingTab({ clinicId }: { clinicId: string }) {
               </option>
             ))}
           </select>
+          <select
+            className="input col-span-2"
+            value={treatment}
+            onChange={(e) => setTreatment(e.target.value)}
+          >
+            <option value="">Treatment (optional)</option>
+            {TREATMENTS.map((t) => (
+              <option key={t} value={t}>{t}</option>
+            ))}
+          </select>
           <input
             className="input col-span-2"
             type="number"
@@ -169,6 +190,9 @@ export default function BillingTab({ clinicId }: { clinicId: string }) {
                   <p className="text-sm text-ink/60">
                     {inv.invoice_date} · {formatCurrency(Number(inv.total_amount))} total ·{" "}
                     {formatCurrency(balance)} due
+                    {inv.treatment && (
+                      <> · <span className="text-teal">{inv.treatment}</span></>
+                    )}
                     {paymentCount > 0 && (
                       <button
                         className="ml-2 text-teal underline underline-offset-2"

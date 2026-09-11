@@ -44,6 +44,7 @@ export type Invoice = {
   clinic_id: string;
   patient_id: string;
   doctor_id: string | null;
+  treatment: string | null;
   invoice_date: string;
   total_amount: number;
   status: "unpaid" | "partial" | "paid";
