@@ -154,7 +154,7 @@ export default function InventoryTab({ clinicId }: { clinicId: string }) {
       <div className="card divide-y divide-line">
         {items.length === 0 && (
           <p className="p-5 text-sm text-ink/60">
-            No inventory items yet — add your first one above.
+            No inventory items yet. Add your first one above.
           </p>
         )}
         {items.map((item) => {

@@ -133,7 +133,7 @@ export default function BillingTab({ clinicId }: { clinicId: string }) {
             <option value="">Treating doctor (optional)</option>
             {doctors.map((d) => (
               <option key={d.id} value={d.id}>
-                {d.name}{d.specialty ? ` — ${d.specialty}` : ""}
+                {d.name}{d.specialty ? ` - ${d.specialty}` : ""}
               </option>
             ))}
           </select>
@@ -168,7 +168,7 @@ export default function BillingTab({ clinicId }: { clinicId: string }) {
       <div className="card divide-y divide-line">
         {invoices.length === 0 && (
           <p className="p-5 text-sm text-ink/60">
-            No invoices yet — create your first one above.
+            No invoices yet. Create your first one above.
           </p>
         )}
         {invoices.map((inv) => {

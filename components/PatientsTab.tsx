@@ -121,7 +121,7 @@ export default function PatientsTab({ clinicId }: { clinicId: string }) {
       <div className="card divide-y divide-line">
         {patients.length === 0 && (
           <p className="p-5 text-sm text-ink/60">
-            No patients yet — add your first one above.
+            No patients yet. Add your first one above.
           </p>
         )}
         {patients.map((p) => (
@@ -130,7 +130,7 @@ export default function PatientsTab({ clinicId }: { clinicId: string }) {
               <p className="font-medium">{p.full_name}</p>
               <p className="text-sm text-ink/60">
                 {p.phone || "No phone"} · {p.age ? `${p.age} yrs` : "—"} ·{" "}
-                {p.gender || "—"}
+                {p.gender || "-"}
                 {p.locality && (
                   <>
                     {" "}· <span className="text-violet font-medium">{p.locality}</span>

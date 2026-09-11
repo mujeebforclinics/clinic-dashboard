@@ -30,7 +30,7 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         <h1 className="font-display text-3xl font-semibold mb-1">Welcome back</h1>
         <p className="text-ink/60 mb-6 text-sm">
-          Log in to see today's appointments, billing, and stock — live.
+          Log in to see today's appointments, billing, and stock in real time.
         </p>
 
         <form onSubmit={handleLogin} className="card p-6 space-y-4">

@@ -168,7 +168,7 @@ export default function AppointmentsTab({ clinicId }: { clinicId: string }) {
             <option value="">Select doctor (optional)</option>
             {doctors.map((d) => (
               <option key={d.id} value={d.id}>
-                {d.name}{d.specialty ? ` — ${d.specialty}` : ""}
+                {d.name}{d.specialty ? ` - ${d.specialty}` : ""}
               </option>
             ))}
           </select>
@@ -221,7 +221,7 @@ export default function AppointmentsTab({ clinicId }: { clinicId: string }) {
       <div className="card divide-y divide-line">
         {appointments.length === 0 && (
           <p className="p-5 text-sm text-ink/60">
-            No appointments yet — book your first one above.
+            No appointments yet. Book your first one above.
           </p>
         )}
         {appointments.map((a) => (

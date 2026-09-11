@@ -59,7 +59,7 @@ export default function SignupPage() {
           </p>
           <p className="text-sm text-ink/60">
             We sent a confirmation link to <strong>{email}</strong>. Click it,
-            then come back and log in — your clinic will be set up
+            then come back and log in, and your clinic will be set up
             automatically.
           </p>
           <Link href="/login" className="btn-primary inline-block mt-4">

@@ -107,7 +107,7 @@ export default function OverviewTab({ clinicId }: { clinicId: string }) {
 
   let trendColor = "text-ink/60";
   let trendBg = "bg-ink/5";
-  let trendLabel = "—";
+  let trendLabel = "-";
   if (todayRevenue !== null && yesterdayRevenue !== null && yesterdayRevenue > 0) {
     const pctChange = ((todayRevenue - yesterdayRevenue) / yesterdayRevenue) * 100;
     if (pctChange >= 0) {

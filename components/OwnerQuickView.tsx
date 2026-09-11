@@ -104,7 +104,8 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
     let trendQ = supabase.from("payments").select("amount, paid_at").eq("clinic_id", clinicId).gte("paid_at", sevenDaysAgoStr);
     let weekQ = supabase.from("appointments").select("appointment_date").eq("clinic_id", clinicId).gte("appointment_date", sevenDaysAgoStr);
     let methodQ = supabase.from("payments").select("amount, payment_method").eq("clinic_id", clinicId).gte("paid_at", thirtyDaysAgoStr);
-    let allInvQ = supabase.from("invoices").select("total_amount, payments(amount)").eq("clinic_id", clinicId);
+    let allInvQ = supabase.from("invoices").select("total_amount, payments(amount)").eq("clinic_id", clinicId).limit(3000);
+    let treatmentQ = supabase.from("invoices").select("treatment, payments(amount, paid_at)").eq("clinic_id", clinicId).not("treatment", "is", null).limit(3000);
 
     if (selectedDoctorId) {
       apptQ = apptQ.eq("doctor_id", selectedDoctorId);
@@ -114,6 +115,7 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
       weekQ = weekQ.eq("doctor_id", selectedDoctorId);
       methodQ = methodQ.eq("doctor_id", selectedDoctorId);
       allInvQ = allInvQ.eq("doctor_id", selectedDoctorId);
+      treatmentQ = treatmentQ.eq("doctor_id", selectedDoctorId);
     }
 
     const [
@@ -140,12 +142,12 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
       trendQ,
       weekQ,
       supabase.from("staff_notes").select("id, message, urgency, created_at").eq("clinic_id", clinicId).eq("is_read", false).order("created_at", { ascending: false }),
-      supabase.from("patients").select("locality").eq("clinic_id", clinicId).not("locality", "is", null),
+      supabase.from("patients").select("locality").eq("clinic_id", clinicId).not("locality", "is", null).limit(3000),
       methodQ,
       supabase.from("doctors").select("id, name, specialty").eq("clinic_id", clinicId),
-      supabase.from("invoices").select("doctor_id, total_amount, payments(amount)").eq("clinic_id", clinicId),
+      supabase.from("invoices").select("doctor_id, total_amount, payments(amount)").eq("clinic_id", clinicId).limit(3000),
       supabase.from("appointments").select("doctor_id, lab_name, doctors(name)").eq("clinic_id", clinicId).eq("referred_to_lab", true).not("lab_name", "is", null),
-      supabase.from("invoices").select("treatment, payments(amount, paid_at)").eq("clinic_id", clinicId).not("treatment", "is", null),
+      treatmentQ,
     ]);
 
     const counts = { scheduled: 0, completed: 0, cancelled: 0, noShow: 0 };
@@ -293,10 +295,10 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
     else if (pendingDuesTotal > 5000) alerts.push({ text: `${formatCurrency(pendingDuesTotal)} outstanding across patients`, severity: "attention" });
     if (lowStockItems.length >= 3) alerts.push({ text: `${lowStockItems.length} items critically low on stock`, severity: "critical" });
     else if (lowStockItems.length > 0) alerts.push({ text: `${lowStockItems.length} item${lowStockItems.length > 1 ? "s" : ""} running low on stock`, severity: "attention" });
-    if (counts.noShow >= 3) alerts.push({ text: `${counts.noShow} no-shows — higher than usual`, severity: "attention" });
+    if (counts.noShow >= 3) alerts.push({ text: `${counts.noShow} no-shows, higher than usual`, severity: "attention" });
     if (counts.cancelled >= 3) alerts.push({ text: `${counts.cancelled} cancelled appointments`, severity: "monitor" });
     if (collectionRatePct < 50 && totalBilled > 0) alerts.push({ text: `Collection rate is low (${collectionRatePct.toFixed(0)}%)`, severity: "critical" });
-    if (alerts.length === 0) alerts.push({ text: "Everything looks healthy — no issues detected", severity: "healthy" });
+    if (alerts.length === 0) alerts.push({ text: "Everything looks healthy, no issues detected", severity: "healthy" });
 
     const periodLabel =
       activeDate === today
@@ -403,7 +405,7 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
                   }}
                   className="text-xs text-teal underline underline-offset-2 mt-0.5"
                 >
-                  Clear filters — show everything
+                  Clear filters (show everything)
                 </button>
               )}
             </div>
@@ -484,7 +486,7 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
                 )}
 
                 <div className="rounded-xl p-4 bg-teal text-white shadow-lg">
-                  <p className="text-xs opacity-80">Revenue — {data.periodLabel}</p>
+                  <p className="text-xs opacity-80">Revenue · {data.periodLabel}</p>
                   <p className="font-display text-3xl font-semibold mt-1">{formatCurrency(data.revenue)}</p>
                 </div>
                 <div className={`rounded-xl p-4 text-white shadow-lg ${data.pendingDuesTotal > 0 ? "bg-clay" : "bg-sage"}`}>
@@ -508,7 +510,7 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
 
               <div className="lg:col-span-1 space-y-4">
                 <div className="card p-4 shadow-lg">
-                  <p className="text-sm text-ink/60 mb-2">Appointments — {data.periodLabel} ({data.totalAppts})</p>
+                  <p className="text-sm text-ink/60 mb-2">Appointments · {data.periodLabel} ({data.totalAppts})</p>
                   {pieData.length === 0 ? (
                     <p className="text-sm text-ink/40 py-6 text-center">No appointments</p>
                   ) : (
@@ -545,7 +547,7 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
                 </div>
 
                 <div className="card p-4 shadow-lg">
-                  <p className="text-sm text-ink/60 mb-2">Appointments this week — tap a day</p>
+                  <p className="text-sm text-ink/60 mb-2">Appointments this week (tap a day)</p>
                   <div style={{ width: "100%", height: 140 }}>
                     <ResponsiveContainer>
                       <BarChart data={data.weeklyAppointments}>
@@ -585,7 +587,7 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
                 <div className="card p-4 shadow-lg">
                   <p className="text-sm text-ink/60 mb-1">Top treatments by revenue</p>
                   <p className="text-xs text-teal font-medium mb-2">
-                    {data.periodLabel}: {data.topTreatmentsToday[0] ? `${data.topTreatmentsToday[0].treatment} — ${formatCurrency(data.topTreatmentsToday[0].revenue)}` : "No sales yet"}
+                    {data.periodLabel}: {data.topTreatmentsToday[0] ? `${data.topTreatmentsToday[0].treatment}: ${formatCurrency(data.topTreatmentsToday[0].revenue)}` : "No sales yet"}
                   </p>
                   {data.topTreatmentsWeek.length === 0 ? (
                     <p className="text-sm text-ink/40 py-4 text-center">No treatment data yet</p>
@@ -611,7 +613,7 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
 
               <div className="lg:col-span-1 space-y-4">
                 <div className="card p-4 shadow-lg">
-                  <p className="text-sm text-ink/60 mb-3">Business by doctor — tap to filter</p>
+                  <p className="text-sm text-ink/60 mb-3">Business by doctor (tap to filter)</p>
                   <div className="space-y-2">
                     {data.byDoctor.map((d, i) => (
                       <button
