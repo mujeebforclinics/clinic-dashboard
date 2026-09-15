@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { formatCurrency } from "@/lib/format";
 import Modal from "@/components/Modal";
+import Spinner from "@/components/Spinner";
 import {
   PieChart,
   Pie,
@@ -42,21 +43,19 @@ type Snapshot = {
   topTreatmentsWeek: { treatment: string; revenue: number }[];
 };
 
+// Two-color system: teal is the everyday color, clay is reserved for
+// anything that needs attention. Chart categories use teal shades so
+// everything still reads as one calm, restrained palette.
+const TEAL_SHADES = ["#0F4C49", "#1D7874", "#4FA39F", "#8FC4C1"];
+const CLAY = "#B5563C";
+
 const STATUS_COLORS: Record<string, string> = {
-  Scheduled: "#1D7874",
-  Completed: "#6D5DD3",
-  Cancelled: "#B5563C",
-  "No-show": "#D97706",
+  Scheduled: TEAL_SHADES[1],
+  Completed: TEAL_SHADES[0],
+  Cancelled: CLAY,
+  "No-show": "#D08569",
 };
-const METHOD_COLORS: Record<string, string> = { Cash: "#1D7874", UPI: "#6D5DD3", Card: "#D6537A" };
-const PIN_COLORS = [
-  { bg: "bg-teal", text: "text-white" },
-  { bg: "bg-violet", text: "text-white" },
-  { bg: "bg-rose", text: "text-white" },
-  { bg: "bg-amber-600", text: "text-white" },
-  { bg: "bg-sage", text: "text-white" },
-];
-const DOCTOR_COLORS = ["#1D7874", "#6D5DD3", "#D6537A", "#D97706", "#5C7A6E", "#B5563C"];
+const METHOD_COLORS: Record<string, string> = { Cash: TEAL_SHADES[0], UPI: TEAL_SHADES[1], Card: TEAL_SHADES[2] };
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 type TileKey =
@@ -69,27 +68,38 @@ type TileKey =
   | "localities"
   | "lowStock";
 
+type Detail =
+  | { kind: "doctor"; id: string }
+  | { kind: "day"; date: string }
+  | { kind: "treatment"; treatment: string }
+  | { kind: "locality"; locality: string }
+  | { kind: "method"; name: string }
+  | { kind: "status"; status: string }
+  | null;
+
 function Tile({
   label,
   value,
   sub,
-  accent,
+  alert,
   onClick,
 }: {
   label: string;
   value: string;
   sub?: string;
-  accent: string;
+  alert?: boolean;
   onClick: () => void;
 }) {
   return (
     <button
       onClick={onClick}
-      className={`rounded-xl p-3 text-left shadow-md hover:opacity-90 transition text-white ${accent}`}
+      className={`rounded-xl p-3 text-left shadow-md hover:opacity-90 transition text-white ${
+        alert ? "bg-clay" : "bg-teal"
+      }`}
     >
       <p className="text-[11px] opacity-80 leading-tight">{label}</p>
       <p className="font-display text-xl font-semibold leading-tight mt-0.5">{value}</p>
-      {sub && <p className="text-[10px] opacity-70 mt-0.5">{sub}</p>}
+      {sub && <p className="text-[10px] opacity-70 mt-0.5 truncate">{sub}</p>}
     </button>
   );
 }
@@ -99,8 +109,9 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
   const [data, setData] = useState<Snapshot | null>(null);
   const [notes, setNotes] = useState<StaffNote[]>([]);
   const [activeTile, setActiveTile] = useState<TileKey | null>(null);
-  const [modalDoctorId, setModalDoctorId] = useState<string | null>(null);
-  const [modalDay, setModalDay] = useState<string | null>(null);
+  const [detail, setDetail] = useState<Detail>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailExtra, setDetailExtra] = useState<any>(null);
 
   const load = async () => {
     const today = new Date().toISOString().slice(0, 10);
@@ -285,7 +296,7 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
       cancelled: counts.cancelled,
       noShow: counts.noShow,
       revenue,
-      lowStockItems: lowStockItems.slice(0, 8),
+      lowStockItems: lowStockItems.slice(0, 10),
       pendingDuesTotal,
       revenueTrend,
       weeklyAppointments,
@@ -333,15 +344,45 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
       ].filter((d) => d.value > 0)
     : [];
 
-  const closeModal = () => {
+  const goToDetail = async (d: Detail) => {
     setActiveTile(null);
-    setModalDoctorId(null);
-    setModalDay(null);
+    setDetail(d);
+    setDetailExtra(null);
+    if (!d) return;
+
+    if (d.kind === "locality") {
+      setDetailLoading(true);
+      const { data: rows } = await supabase
+        .from("patients")
+        .select("full_name, phone")
+        .eq("clinic_id", clinicId)
+        .eq("locality", d.locality)
+        .limit(30);
+      setDetailExtra(rows ?? []);
+      setDetailLoading(false);
+    } else if (d.kind === "status") {
+      setDetailLoading(true);
+      const statusMap: Record<string, string> = {
+        Scheduled: "scheduled", Completed: "completed", Cancelled: "cancelled", "No-show": "no_show",
+      };
+      const today = new Date().toISOString().slice(0, 10);
+      const { data: rows } = await supabase
+        .from("appointments")
+        .select("appointment_time, patients(full_name)")
+        .eq("clinic_id", clinicId)
+        .eq("appointment_date", today)
+        .eq("status", statusMap[d.status])
+        .limit(30);
+      setDetailExtra(rows ?? []);
+      setDetailLoading(false);
+    }
   };
 
-  const filteredLabReferrals = data?.labReferrals.filter(
-    (r) => !modalDoctorId || r.doctor === data.byDoctor.find((d) => d.id === modalDoctorId)?.name
-  ) ?? [];
+  const closeAll = () => {
+    setActiveTile(null);
+    setDetail(null);
+    setDetailExtra(null);
+  };
 
   return (
     <>
@@ -361,98 +402,89 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
         )}
       </button>
 
-      {open && <div className="fixed inset-0 bg-black/30 z-40" onClick={() => setOpen(false)} />}
-
-      <div
-        className={`fixed top-0 left-0 right-0 z-50 bg-sand shadow-2xl transition-transform duration-300 ease-out max-h-[92vh] overflow-y-auto rounded-b-2xl ${
-          open ? "translate-y-0" : "-translate-y-full"
-        }`}
-      >
-        <div className="p-4 max-w-5xl mx-auto">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="font-display text-lg font-semibold">Today's Snapshot</h2>
-            <button onClick={() => setOpen(false)} className="text-ink/50 hover:text-ink text-2xl leading-none" aria-label="Close">
-              ×
-            </button>
-          </div>
-
-          {!data ? (
-            <p className="text-sm text-ink/60">Loading…</p>
-          ) : (
-            <div className="space-y-3">
-              {/* Health score + alerts - compact single row */}
-              <div className="card p-3 shadow-md flex items-center gap-4">
-                <div className="shrink-0 flex flex-col items-center">
-                  <svg width="60" height="60" viewBox="0 0 100 100">
-                    <circle cx="50" cy="50" r="42" stroke="#E4DED2" strokeWidth="10" fill="none" />
-                    <circle
-                      cx="50" cy="50" r="42"
-                      stroke={data.healthScore >= 85 ? "#1D7874" : data.healthScore >= 70 ? "#5C7A6E" : data.healthScore >= 50 ? "#D97706" : "#B5563C"}
-                      strokeWidth="10" fill="none"
-                      strokeDasharray={2 * Math.PI * 42}
-                      strokeDashoffset={2 * Math.PI * 42 - (Math.max(0, Math.min(100, data.healthScore)) / 100) * (2 * Math.PI * 42)}
-                      strokeLinecap="round" transform="rotate(-90 50 50)"
-                    />
-                    <text x="50" y="57" textAnchor="middle" fontSize="30" fontWeight="700" fill="#1C2321">{data.healthScore}</text>
-                  </svg>
-                  <p className="text-[10px] font-medium">{data.healthLabel}</p>
-                </div>
-                <div className="flex-1 flex flex-wrap gap-1.5">
-                  {data.alerts.map((a, i) => {
-                    const style =
-                      a.severity === "critical" ? "bg-clay/10 text-clay" :
-                      a.severity === "attention" ? "bg-amber-100 text-amber-800" :
-                      a.severity === "monitor" ? "bg-violet/10 text-violet" : "bg-teal/10 text-teal";
-                    const dot = a.severity === "critical" ? "🔴" : a.severity === "attention" ? "🟠" : a.severity === "monitor" ? "🟡" : "🟢";
-                    return (
-                      <span key={i} className={`text-[11px] rounded-full px-2 py-1 ${style}`}>{dot} {a.text}</span>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {notes.length > 0 && (
-                <div className="space-y-1.5 max-h-28 overflow-y-auto">
-                  {notes.map((n) => (
-                    <div key={n.id} className={`flex items-start justify-between gap-2 rounded-lg px-3 py-2 ${n.urgency === "urgent" ? "bg-clay/10 border border-clay/30" : "bg-teal/10 border border-teal/30"}`}>
-                      <p className="text-xs"><span className={`font-semibold uppercase mr-1 ${n.urgency === "urgent" ? "text-clay" : "text-teal"}`}>{n.urgency === "urgent" ? "Urgent" : "Note"}</span>{n.message}</p>
-                      <button onClick={() => dismissNote(n.id)} className="text-[10px] text-ink/50 shrink-0">✕</button>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Revenue + Pending - bold, always visible */}
-              <div className="grid grid-cols-2 gap-2">
-                <div className="rounded-xl p-3 bg-teal text-white shadow-md">
-                  <p className="text-[11px] opacity-80">Revenue today</p>
-                  <p className="font-display text-xl font-semibold">{formatCurrency(data.revenue)}</p>
-                </div>
-                <div className={`rounded-xl p-3 text-white shadow-md ${data.pendingDuesTotal > 0 ? "bg-clay" : "bg-sage"}`}>
-                  <p className="text-[11px] opacity-80">Pending dues</p>
-                  <p className="font-display text-xl font-semibold">{formatCurrency(data.pendingDuesTotal)}</p>
-                </div>
-              </div>
-
-              {/* Tap-to-popup tile grid - no scrolling needed */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                <Tile label="Appointments today" value={String(data.totalAppts)} accent="bg-teal" onClick={() => setActiveTile("appointments")} />
-                <Tile label="Revenue, 7 days" value={formatCurrency(data.revenueTrend.reduce((s, d) => s + d.amount, 0))} accent="bg-violet" onClick={() => setActiveTile("revenueTrend")} />
-                <Tile label="Appts this week" value={String(data.weeklyAppointments.reduce((s, d) => s + d.count, 0))} accent="bg-rose" onClick={() => setActiveTile("weeklyAppts")} />
-                <Tile label="Payment methods" value={`${data.paymentMethods.length} types`} accent="bg-amber-600" onClick={() => setActiveTile("paymentMethods")} />
-                <Tile label="Business by doctor" value={`${data.byDoctor.length} doctors`} sub={data.byDoctor[0]?.name} accent="bg-sage" onClick={() => setActiveTile("byDoctor")} />
-                <Tile label="Top treatments" value={data.topTreatmentsWeek[0]?.treatment ?? "-"} sub="tap for full list" accent="bg-teal" onClick={() => setActiveTile("treatments")} />
-                <Tile label="Patient localities" value={`${data.topLocalities.length} areas`} accent="bg-violet" onClick={() => setActiveTile("localities")} />
-                <Tile label="Low stock" value={String(data.lowStockItems.length)} accent={data.lowStockItems.length > 0 ? "bg-clay" : "bg-sage"} onClick={() => setActiveTile("lowStock")} />
-              </div>
+      {open && (
+        <div className="fixed inset-0 z-50 bg-sand overflow-y-auto">
+          <div className="p-4 max-w-5xl mx-auto min-h-full">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-display text-lg font-semibold">Today's Snapshot</h2>
+              <button onClick={() => setOpen(false)} className="text-ink/50 hover:text-ink text-2xl leading-none" aria-label="Close">
+                ×
+              </button>
             </div>
-          )}
+
+            {!data ? (
+              <p className="text-sm text-ink/60"><Spinner size={14} className="mr-1.5" />Loading…</p>
+            ) : (
+              <div className="space-y-3">
+                <div className="card p-3 shadow-md flex items-center gap-4">
+                  <div className="shrink-0 flex flex-col items-center">
+                    <svg width="60" height="60" viewBox="0 0 100 100">
+                      <circle cx="50" cy="50" r="42" stroke="#E4DED2" strokeWidth="10" fill="none" />
+                      <circle
+                        cx="50" cy="50" r="42"
+                        stroke={data.healthScore >= 70 ? TEAL_SHADES[1] : CLAY}
+                        strokeWidth="10" fill="none"
+                        strokeDasharray={2 * Math.PI * 42}
+                        strokeDashoffset={2 * Math.PI * 42 - (Math.max(0, Math.min(100, data.healthScore)) / 100) * (2 * Math.PI * 42)}
+                        strokeLinecap="round" transform="rotate(-90 50 50)"
+                      />
+                      <text x="50" y="57" textAnchor="middle" fontSize="30" fontWeight="700" fill="#1C2321">{data.healthScore}</text>
+                    </svg>
+                    <p className="text-[10px] font-medium">{data.healthLabel}</p>
+                  </div>
+                  <div className="flex-1 flex flex-wrap gap-1.5">
+                    {data.alerts.map((a, i) => {
+                      const isGood = a.severity === "healthy";
+                      return (
+                        <span key={i} className={`text-[11px] rounded-full px-2 py-1 ${isGood ? "bg-teal/10 text-teal" : "bg-clay/10 text-clay"}`}>
+                          {isGood ? "🟢" : "🔴"} {a.text}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {notes.length > 0 && (
+                  <div className="space-y-1.5 max-h-28 overflow-y-auto">
+                    {notes.map((n) => (
+                      <div key={n.id} className={`flex items-start justify-between gap-2 rounded-lg px-3 py-2 ${n.urgency === "urgent" ? "bg-clay/10 border border-clay/30" : "bg-teal/10 border border-teal/30"}`}>
+                        <p className="text-xs"><span className={`font-semibold uppercase mr-1 ${n.urgency === "urgent" ? "text-clay" : "text-teal"}`}>{n.urgency === "urgent" ? "Urgent" : "Note"}</span>{n.message}</p>
+                        <button onClick={() => dismissNote(n.id)} className="text-[10px] text-ink/50 shrink-0">✕</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="rounded-xl p-3 bg-teal text-white shadow-md">
+                    <p className="text-[11px] opacity-80">Revenue today</p>
+                    <p className="font-display text-xl font-semibold">{formatCurrency(data.revenue)}</p>
+                  </div>
+                  <div className={`rounded-xl p-3 text-white shadow-md ${data.pendingDuesTotal > 0 ? "bg-clay" : "bg-teal"}`}>
+                    <p className="text-[11px] opacity-80">Pending dues</p>
+                    <p className="font-display text-xl font-semibold">{formatCurrency(data.pendingDuesTotal)}</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <Tile label="Appointments today" value={String(data.totalAppts)} onClick={() => setActiveTile("appointments")} />
+                  <Tile label="Revenue, 7 days" value={formatCurrency(data.revenueTrend.reduce((s, d) => s + d.amount, 0))} onClick={() => setActiveTile("revenueTrend")} />
+                  <Tile label="Appts this week" value={String(data.weeklyAppointments.reduce((s, d) => s + d.count, 0))} onClick={() => setActiveTile("weeklyAppts")} />
+                  <Tile label="Payment methods" value={`${data.paymentMethods.length} types`} onClick={() => setActiveTile("paymentMethods")} />
+                  <Tile label="Business by doctor" value={`${data.byDoctor.length} doctors`} sub={data.byDoctor[0]?.name} onClick={() => setActiveTile("byDoctor")} />
+                  <Tile label="Top treatments" value={data.topTreatmentsWeek[0]?.treatment ?? "-"} sub="tap for full list" onClick={() => setActiveTile("treatments")} />
+                  <Tile label="Patient localities" value={`${data.topLocalities.length} areas`} onClick={() => setActiveTile("localities")} />
+                  <Tile label="Low stock" value={String(data.lowStockItems.length)} alert={data.lowStockItems.length > 0} onClick={() => setActiveTile("lowStock")} />
+                </div>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* ===== Per-tile popups ===== */}
+      {/* ===== Level 1: list/chart popups ===== */}
 
-      <Modal open={activeTile === "appointments"} onClose={closeModal} title="Appointments today">
+      <Modal open={activeTile === "appointments"} onClose={() => setActiveTile(null)} title="Appointments today — tap a slice">
         {data && (
           <>
             {pieData.length === 0 ? (
@@ -461,7 +493,11 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
               <div style={{ width: "100%", height: 220 }}>
                 <ResponsiveContainer>
                   <PieChart>
-                    <Pie data={pieData} dataKey="value" nameKey="name" innerRadius={55} outerRadius={85} paddingAngle={2}>
+                    <Pie
+                      data={pieData} dataKey="value" nameKey="name" innerRadius={55} outerRadius={85} paddingAngle={2}
+                      onClick={(entry: any) => goToDetail({ kind: "status", status: entry.name })}
+                      cursor="pointer"
+                    >
                       {pieData.map((entry) => (<Cell key={entry.name} fill={STATUS_COLORS[entry.name]} />))}
                     </Pie>
                     <Tooltip />
@@ -471,75 +507,54 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
             )}
             <div className="flex flex-wrap gap-3 mt-2 text-sm">
               {pieData.map((d) => (
-                <span key={d.name} className="flex items-center gap-1.5">
+                <button key={d.name} onClick={() => goToDetail({ kind: "status", status: d.name })} className="flex items-center gap-1.5">
                   <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: STATUS_COLORS[d.name] }} />
                   {d.name}: {d.value}
-                </span>
+                </button>
               ))}
             </div>
           </>
         )}
       </Modal>
 
-      <Modal open={activeTile === "revenueTrend"} onClose={closeModal} title="Revenue, last 7 days">
+      <Modal open={activeTile === "revenueTrend"} onClose={() => setActiveTile(null)} title="Revenue, last 7 days — tap a point">
         {data && (
-          <>
-            <div style={{ width: "100%", height: 220 }}>
-              <ResponsiveContainer>
-                <LineChart data={data.revenueTrend} onClick={(e: any) => {
-                  const point = e?.activePayload?.[0]?.payload;
-                  if (point) setModalDay(point.date === modalDay ? null : point.date);
-                }}>
-                  <XAxis dataKey="day" tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
-                  <YAxis hide />
-                  <Tooltip formatter={(v: number) => formatCurrency(v)} />
-                  <Line type="monotone" dataKey="amount" stroke="#1D7874" strokeWidth={2.5} dot={{ r: 4, cursor: "pointer" }} />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-            {modalDay && (
-              <div className="mt-3 bg-teal/10 border border-teal/30 rounded-lg p-3 text-center">
-                <p className="text-xs text-ink/60">{new Date(modalDay).toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "short" })}</p>
-                <p className="font-display text-lg font-semibold text-teal">
-                  {formatCurrency(data.revenueTrend.find((d) => d.date === modalDay)?.amount ?? 0)}
-                </p>
-              </div>
-            )}
-            <p className="text-xs text-ink/40 mt-2">Tap a point on the line to see that day's revenue.</p>
-          </>
+          <div style={{ width: "100%", height: 220 }}>
+            <ResponsiveContainer>
+              <LineChart data={data.revenueTrend} onClick={(e: any) => {
+                const point = e?.activePayload?.[0]?.payload;
+                if (point) goToDetail({ kind: "day", date: point.date });
+              }}>
+                <XAxis dataKey="day" tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
+                <YAxis hide />
+                <Tooltip formatter={(v: number) => formatCurrency(v)} />
+                <Line type="monotone" dataKey="amount" stroke={TEAL_SHADES[1]} strokeWidth={2.5} dot={{ r: 4, cursor: "pointer" }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
         )}
       </Modal>
 
-      <Modal open={activeTile === "weeklyAppts"} onClose={closeModal} title="Appointments this week">
+      <Modal open={activeTile === "weeklyAppts"} onClose={() => setActiveTile(null)} title="Appointments this week — tap a day">
         {data && (
-          <>
-            <div style={{ width: "100%", height: 220 }}>
-              <ResponsiveContainer>
-                <BarChart data={data.weeklyAppointments}>
-                  <XAxis dataKey="day" tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
-                  <YAxis hide />
-                  <Tooltip />
-                  <Bar dataKey="count" radius={[4, 4, 0, 0]} cursor="pointer" onClick={(entry: any) => setModalDay(entry.date === modalDay ? null : entry.date)}>
-                    {data.weeklyAppointments.map((entry) => (
-                      <Cell key={entry.date} fill={entry.date === modalDay ? "#D6537A" : "#6D5DD3"} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-            {modalDay && (
-              <div className="mt-3 bg-violet/10 border border-violet/30 rounded-lg p-3 text-center">
-                <p className="text-xs text-ink/60">{new Date(modalDay).toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "short" })}</p>
-                <p className="font-display text-lg font-semibold text-violet">
-                  {data.weeklyAppointments.find((d) => d.date === modalDay)?.count ?? 0} appointments
-                </p>
-              </div>
-            )}
-          </>
+          <div style={{ width: "100%", height: 220 }}>
+            <ResponsiveContainer>
+              <BarChart data={data.weeklyAppointments}>
+                <XAxis dataKey="day" tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
+                <YAxis hide />
+                <Tooltip />
+                <Bar dataKey="count" radius={[4, 4, 0, 0]} cursor="pointer" onClick={(entry: any) => goToDetail({ kind: "day", date: entry.date })}>
+                  {data.weeklyAppointments.map((entry) => (
+                    <Cell key={entry.date} fill={TEAL_SHADES[1]} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         )}
       </Modal>
 
-      <Modal open={activeTile === "paymentMethods"} onClose={closeModal} title="Payment methods (30 days)">
+      <Modal open={activeTile === "paymentMethods"} onClose={() => setActiveTile(null)} title="Payment methods (30 days) — tap a method">
         {data && (
           <>
             {data.paymentMethods.length === 0 ? (
@@ -548,7 +563,11 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
               <div style={{ width: "100%", height: 220 }}>
                 <ResponsiveContainer>
                   <PieChart>
-                    <Pie data={data.paymentMethods} dataKey="value" nameKey="name" innerRadius={55} outerRadius={85} paddingAngle={2}>
+                    <Pie
+                      data={data.paymentMethods} dataKey="value" nameKey="name" innerRadius={55} outerRadius={85} paddingAngle={2}
+                      onClick={(entry: any) => goToDetail({ kind: "method", name: entry.name })}
+                      cursor="pointer"
+                    >
                       {data.paymentMethods.map((entry) => (<Cell key={entry.name} fill={METHOD_COLORS[entry.name]} />))}
                     </Pie>
                     <Tooltip formatter={(v: number) => formatCurrency(v)} />
@@ -558,60 +577,37 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
             )}
             <div className="flex flex-wrap gap-3 mt-2 text-sm">
               {data.paymentMethods.map((d) => (
-                <span key={d.name} className="flex items-center gap-1.5">
+                <button key={d.name} onClick={() => goToDetail({ kind: "method", name: d.name })} className="flex items-center gap-1.5">
                   <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: METHOD_COLORS[d.name] }} />
                   {d.name}: {formatCurrency(d.value)}
-                </span>
+                </button>
               ))}
             </div>
           </>
         )}
       </Modal>
 
-      <Modal open={activeTile === "byDoctor"} onClose={closeModal} title="Business by doctor">
+      <Modal open={activeTile === "byDoctor"} onClose={() => setActiveTile(null)} title="Business by doctor — tap a doctor">
         {data && (
-          <div className="space-y-4">
-            <div className="space-y-2">
-              {data.byDoctor.map((d, i) => (
-                <button
-                  key={d.id}
-                  onClick={() => setModalDoctorId(modalDoctorId === d.id ? null : d.id)}
-                  className={`w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-left transition ${
-                    modalDoctorId === d.id ? "bg-violet/15 border border-violet" : "bg-sand hover:bg-violet/5"
-                  }`}
-                >
-                  <span className="w-3 h-3 rounded-full shrink-0" style={{ background: DOCTOR_COLORS[i % DOCTOR_COLORS.length] }} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{d.name}</p>
-                    <p className="text-xs text-violet">{d.specialty}</p>
-                  </div>
-                  <p className="font-display text-sm font-semibold whitespace-nowrap">{formatCurrency(d.revenue)}</p>
-                </button>
-              ))}
-            </div>
-
-            <div>
-              <p className="text-sm font-semibold text-ink/70 mb-2">
-                Lab referrals {modalDoctorId && `— ${data.byDoctor.find((d) => d.id === modalDoctorId)?.name}`}
-              </p>
-              {filteredLabReferrals.length === 0 ? (
-                <p className="text-sm text-ink/40">No lab referrals yet</p>
-              ) : (
-                <div className="space-y-1.5">
-                  {filteredLabReferrals.map((r) => (
-                    <div key={`${r.doctor}-${r.lab}`} className="flex items-center justify-between text-sm bg-rose/5 border border-rose/20 rounded-lg px-3 py-2">
-                      <span><span className="text-violet font-medium">{r.doctor}</span> → {r.lab}</span>
-                      <span className="font-semibold text-rose">{r.count}</span>
-                    </div>
-                  ))}
+          <div className="space-y-2">
+            {data.byDoctor.map((d) => (
+              <button
+                key={d.id}
+                onClick={() => goToDetail({ kind: "doctor", id: d.id })}
+                className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-left bg-sand hover:bg-teal/10 transition"
+              >
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{d.name}</p>
+                  <p className="text-xs text-ink/50">{d.specialty}</p>
                 </div>
-              )}
-            </div>
+                <p className="font-display text-sm font-semibold whitespace-nowrap">{formatCurrency(d.revenue)}</p>
+              </button>
+            ))}
           </div>
         )}
       </Modal>
 
-      <Modal open={activeTile === "treatments"} onClose={closeModal} title="Top treatments (7 days)">
+      <Modal open={activeTile === "treatments"} onClose={() => setActiveTile(null)} title="Top treatments (7 days) — tap one">
         {data && (
           <>
             {data.topTreatmentsWeek.length === 0 ? (
@@ -623,8 +619,11 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
                     <XAxis type="number" hide />
                     <YAxis dataKey="treatment" type="category" tick={{ fontSize: 12 }} axisLine={false} tickLine={false} width={130} />
                     <Tooltip formatter={(v: number) => formatCurrency(v)} />
-                    <Bar dataKey="revenue" radius={[0, 4, 4, 0]}>
-                      {data.topTreatmentsWeek.map((entry, i) => (<Cell key={entry.treatment} fill={DOCTOR_COLORS[i % DOCTOR_COLORS.length]} />))}
+                    <Bar
+                      dataKey="revenue" radius={[0, 4, 4, 0]} cursor="pointer"
+                      onClick={(entry: any) => goToDetail({ kind: "treatment", treatment: entry.treatment })}
+                    >
+                      {data.topTreatmentsWeek.map((entry, i) => (<Cell key={entry.treatment} fill={TEAL_SHADES[i % TEAL_SHADES.length]} />))}
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
@@ -634,30 +633,31 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
         )}
       </Modal>
 
-      <Modal open={activeTile === "localities"} onClose={closeModal} title="Where patients come from">
+      <Modal open={activeTile === "localities"} onClose={() => setActiveTile(null)} title="Where patients come from — tap an area">
         {data && (
           <>
             {data.topLocalities.length === 0 ? (
               <p className="text-sm text-ink/40 py-4 text-center">No locality data yet</p>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {data.topLocalities.map((loc, i) => {
-                  const c = PIN_COLORS[i % PIN_COLORS.length];
-                  return (
-                    <div key={loc.locality} className={`rounded-xl p-3 ${c.bg} ${c.text}`}>
-                      <p className="font-display text-2xl font-semibold">{loc.count}</p>
-                      <p className="text-xs opacity-90 truncate">{loc.locality}</p>
-                      <p className="text-[10px] opacity-70">patients</p>
-                    </div>
-                  );
-                })}
+                {data.topLocalities.map((loc, i) => (
+                  <button
+                    key={loc.locality}
+                    onClick={() => goToDetail({ kind: "locality", locality: loc.locality })}
+                    className="rounded-xl p-3 bg-teal text-white text-left hover:opacity-90 transition"
+                    style={{ opacity: 1 - i * 0.08 }}
+                  >
+                    <p className="font-display text-2xl font-semibold">{loc.count}</p>
+                    <p className="text-xs opacity-90 truncate">{loc.locality}</p>
+                  </button>
+                ))}
               </div>
             )}
           </>
         )}
       </Modal>
 
-      <Modal open={activeTile === "lowStock"} onClose={closeModal} title="Low stock items">
+      <Modal open={activeTile === "lowStock"} onClose={() => setActiveTile(null)} title="Low stock items">
         {data && (
           <>
             {data.lowStockItems.length === 0 ? (
@@ -673,6 +673,142 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
               </ul>
             )}
           </>
+        )}
+      </Modal>
+
+      {/* ===== Level 2: focused drill-down detail popups ===== */}
+
+      <Modal
+        open={detail?.kind === "doctor"}
+        onClose={closeAll}
+        title={detail?.kind === "doctor" ? data?.byDoctor.find((d) => d.id === detail.id)?.name ?? "" : ""}
+      >
+        {data && detail?.kind === "doctor" && (() => {
+          const doc = data.byDoctor.find((d) => d.id === detail.id);
+          const labs = data.labReferrals.filter((r) => r.doctor === doc?.name);
+          return (
+            <div className="space-y-4">
+              <p className="text-sm text-ink/60">{doc?.specialty}</p>
+              <div className="rounded-xl p-4 bg-teal text-white text-center">
+                <p className="text-xs opacity-80">Business generated</p>
+                <p className="font-display text-2xl font-semibold">{formatCurrency(doc?.revenue ?? 0)}</p>
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-ink/70 mb-2">Lab referrals</p>
+                {labs.length === 0 ? (
+                  <p className="text-sm text-ink/40">No lab referrals yet</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {labs.map((r) => (
+                      <div key={r.lab} className="flex items-center justify-between text-sm bg-sand rounded-lg px-3 py-2">
+                        <span>{r.lab}</span>
+                        <span className="font-semibold text-clay">{r.count}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+      </Modal>
+
+      <Modal
+        open={detail?.kind === "day"}
+        onClose={closeAll}
+        title={detail?.kind === "day" ? new Date(detail.date).toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "short" }) : ""}
+      >
+        {data && detail?.kind === "day" && (
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-xl p-4 bg-teal text-white text-center">
+              <p className="font-display text-2xl font-semibold">
+                {formatCurrency(data.revenueTrend.find((d) => d.date === detail.date)?.amount ?? 0)}
+              </p>
+              <p className="text-xs opacity-80 mt-1">revenue</p>
+            </div>
+            <div className="rounded-xl p-4 bg-teal text-white text-center">
+              <p className="font-display text-2xl font-semibold">
+                {data.weeklyAppointments.find((d) => d.date === detail.date)?.count ?? 0}
+              </p>
+              <p className="text-xs opacity-80 mt-1">appointments</p>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={detail?.kind === "treatment"}
+        onClose={closeAll}
+        title={detail?.kind === "treatment" ? detail.treatment : ""}
+      >
+        {data && detail?.kind === "treatment" && (() => {
+          const t = data.topTreatmentsWeek.find((x) => x.treatment === detail.treatment);
+          const weekTotal = data.topTreatmentsWeek.reduce((s, x) => s + x.revenue, 0);
+          const pct = weekTotal > 0 ? ((t?.revenue ?? 0) / weekTotal) * 100 : 0;
+          return (
+            <div className="rounded-xl p-4 bg-teal text-white text-center">
+              <p className="font-display text-2xl font-semibold">{formatCurrency(t?.revenue ?? 0)}</p>
+              <p className="text-xs opacity-80 mt-1">{pct.toFixed(0)}% of this week's treatment revenue</p>
+            </div>
+          );
+        })()}
+      </Modal>
+
+      <Modal
+        open={detail?.kind === "method"}
+        onClose={closeAll}
+        title={detail?.kind === "method" ? detail.name : ""}
+      >
+        {data && detail?.kind === "method" && (() => {
+          const m = data.paymentMethods.find((x) => x.name === detail.name);
+          const total = data.paymentMethods.reduce((s, x) => s + x.value, 0);
+          const pct = total > 0 ? ((m?.value ?? 0) / total) * 100 : 0;
+          return (
+            <div className="rounded-xl p-4 bg-teal text-white text-center">
+              <p className="font-display text-2xl font-semibold">{formatCurrency(m?.value ?? 0)}</p>
+              <p className="text-xs opacity-80 mt-1">{pct.toFixed(0)}% of payments, last 30 days</p>
+            </div>
+          );
+        })()}
+      </Modal>
+
+      <Modal
+        open={detail?.kind === "locality"}
+        onClose={closeAll}
+        title={detail?.kind === "locality" ? detail.locality : ""}
+      >
+        {detailLoading ? (
+          <p className="text-sm text-ink/60"><Spinner size={14} className="mr-1.5" />Loading…</p>
+        ) : (
+          <ul className="space-y-1.5">
+            {(detailExtra ?? []).map((p: any, i: number) => (
+              <li key={i} className="text-sm bg-sand rounded-lg px-3 py-2 flex justify-between">
+                <span>{p.full_name}</span>
+                <span className="text-ink/50">{p.phone}</span>
+              </li>
+            ))}
+            {(detailExtra ?? []).length === 0 && <p className="text-sm text-ink/40">No patients found</p>}
+          </ul>
+        )}
+      </Modal>
+
+      <Modal
+        open={detail?.kind === "status"}
+        onClose={closeAll}
+        title={detail?.kind === "status" ? `${detail.status} today` : ""}
+      >
+        {detailLoading ? (
+          <p className="text-sm text-ink/60"><Spinner size={14} className="mr-1.5" />Loading…</p>
+        ) : (
+          <ul className="space-y-1.5">
+            {(detailExtra ?? []).map((a: any, i: number) => (
+              <li key={i} className="text-sm bg-sand rounded-lg px-3 py-2 flex justify-between">
+                <span>{a.patients?.full_name ?? "Unknown"}</span>
+                <span className="text-ink/50">{a.appointment_time?.slice(0, 5) ?? ""}</span>
+              </li>
+            ))}
+            {(detailExtra ?? []).length === 0 && <p className="text-sm text-ink/40">None</p>}
+          </ul>
         )}
       </Modal>
     </>
