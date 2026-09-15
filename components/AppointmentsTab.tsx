@@ -136,6 +136,35 @@ export default function AppointmentsTab({ clinicId }: { clinicId: string }) {
     load();
   };
 
+  const [reschedulingAppt, setReschedulingAppt] = useState<Appointment | null>(null);
+  const [rDate, setRDate] = useState("");
+  const [rTime, setRTime] = useState("");
+  const [rDoctorId, setRDoctorId] = useState("");
+  const [reschedSaving, setReschedSaving] = useState(false);
+
+  const openReschedule = (a: Appointment) => {
+    setReschedulingAppt(a);
+    setRDate(a.appointment_date);
+    setRTime(a.appointment_time?.slice(0, 5) ?? "");
+    setRDoctorId(a.doctor_id ?? "");
+  };
+
+  const saveReschedule = async () => {
+    if (!reschedulingAppt) return;
+    setReschedSaving(true);
+    await supabase
+      .from("appointments")
+      .update({
+        appointment_date: rDate,
+        appointment_time: rTime || null,
+        doctor_id: rDoctorId || null,
+      })
+      .eq("id", reschedulingAppt.id);
+    setReschedSaving(false);
+    setReschedulingAppt(null);
+    load();
+  };
+
   const statusColor: Record<string, string> = {
     scheduled: "bg-teal/15 text-teal",
     completed: "bg-ink/10 text-ink/70",
@@ -304,6 +333,12 @@ export default function AppointmentsTab({ clinicId }: { clinicId: string }) {
                 <>
                   <button
                     className="btn-ghost text-xs px-2 py-1"
+                    onClick={() => openReschedule(a)}
+                  >
+                    Reschedule
+                  </button>
+                  <button
+                    className="btn-ghost text-xs px-2 py-1"
                     onClick={() => updateStatus(a.id, "completed")}
                   >
                     Mark done
@@ -320,6 +355,51 @@ export default function AppointmentsTab({ clinicId }: { clinicId: string }) {
           </div>
         ))}
       </div>
+
+      <Modal
+        open={!!reschedulingAppt}
+        onClose={() => setReschedulingAppt(null)}
+        title="Reschedule appointment"
+      >
+        {reschedulingAppt && (
+          <div className="space-y-3">
+            <p className="text-sm text-ink/60">
+              {reschedulingAppt.patients?.full_name ?? "Patient"}
+            </p>
+            <input
+              className="input"
+              type="date"
+              value={rDate}
+              onChange={(e) => setRDate(e.target.value)}
+            />
+            <input
+              className="input"
+              type="time"
+              value={rTime}
+              onChange={(e) => setRTime(e.target.value)}
+            />
+            <select
+              className="input"
+              value={rDoctorId}
+              onChange={(e) => setRDoctorId(e.target.value)}
+            >
+              <option value="">No doctor assigned</option>
+              {doctors.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}{d.specialty ? ` - ${d.specialty}` : ""}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={saveReschedule}
+              disabled={reschedSaving}
+              className="btn-primary w-full"
+            >
+              {reschedSaving ? (<><Spinner size={14} className="mr-1.5" />Saving</>) : "Save changes"}
+            </button>
+          </div>
+        )}
+      </Modal>
 
       <Modal
         open={!!profileDoctor}

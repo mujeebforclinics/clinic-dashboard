@@ -10,7 +10,7 @@ type ItemWithBatches = {
   category: string | null;
   unit: string | null;
   reorder_level: number;
-  inventory_batches: { id: string; quantity: number; expiry_date: string | null; batch_number: string | null }[];
+  inventory_batches: { id: string; quantity: number; expiry_date: string | null; batch_number: string | null; received_date?: string | null }[];
 };
 
 export default function InventoryTab({ clinicId }: { clinicId: string }) {
@@ -30,7 +30,7 @@ export default function InventoryTab({ clinicId }: { clinicId: string }) {
   const load = async () => {
     const { data } = await supabase
       .from("inventory_items")
-      .select("*, inventory_batches(id, quantity, expiry_date, batch_number)")
+      .select("*, inventory_batches(id, quantity, expiry_date, batch_number, received_date)")
       .eq("clinic_id", clinicId)
       .order("item_name", { ascending: true });
     setItems((data as any) ?? []);
@@ -61,6 +61,50 @@ export default function InventoryTab({ clinicId }: { clinicId: string }) {
 
   const totalQty = (item: ItemWithBatches) =>
     (item.inventory_batches ?? []).reduce((s, b) => s + b.quantity, 0);
+
+  const [usingId, setUsingId] = useState<string | null>(null);
+  const [useQty, setUseQty] = useState("");
+  const [useError, setUseError] = useState("");
+
+  const useStock = async (item: ItemWithBatches) => {
+    const qtyToUse = Number(useQty);
+    if (!qtyToUse || qtyToUse <= 0) return;
+    setUseError("");
+
+    const available = totalQty(item);
+    if (qtyToUse > available) {
+      setUseError(`Only ${available} in stock.`);
+      return;
+    }
+
+    // Deduct FIFO: oldest batches (by received date) get used up first
+    const batches = [...(item.inventory_batches ?? [])].sort((a: any, b: any) =>
+      (a.received_date ?? "").localeCompare(b.received_date ?? "")
+    );
+    let remaining = qtyToUse;
+    for (const batch of batches as any[]) {
+      if (remaining <= 0) break;
+      const take = Math.min(batch.quantity, remaining);
+      if (take <= 0) continue;
+      await supabase
+        .from("inventory_batches")
+        .update({ quantity: batch.quantity - take })
+        .eq("id", batch.id);
+      remaining -= take;
+    }
+
+    await supabase.from("inventory_transactions").insert({
+      clinic_id: clinicId,
+      item_id: item.id,
+      transaction_type: "stock_out",
+      quantity: qtyToUse,
+      reference_note: "Used in treatment",
+    });
+
+    setUsingId(null);
+    setUseQty("");
+    load();
+  };
 
   const addStock = async (item: ItemWithBatches) => {
     if (!batchQty) return;
@@ -187,15 +231,44 @@ export default function InventoryTab({ clinicId }: { clinicId: string }) {
                     {item.reorder_level}
                   </p>
                 </div>
-                <button
-                  className="btn-ghost text-xs px-2 py-1"
-                  onClick={() =>
-                    setStockingId(stockingId === item.id ? null : item.id)
-                  }
-                >
-                  + Stock in
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    className="btn-ghost text-xs px-2 py-1"
+                    onClick={() => {
+                      setUsingId(usingId === item.id ? null : item.id);
+                      setUseError("");
+                    }}
+                  >
+                    - Use stock
+                  </button>
+                  <button
+                    className="btn-ghost text-xs px-2 py-1"
+                    onClick={() =>
+                      setStockingId(stockingId === item.id ? null : item.id)
+                    }
+                  >
+                    + Stock in
+                  </button>
+                </div>
               </div>
+
+              {usingId === item.id && (
+                <div className="mt-3 flex gap-2">
+                  <input
+                    className="input"
+                    type="number"
+                    placeholder="Quantity used"
+                    value={useQty}
+                    onChange={(e) => setUseQty(e.target.value)}
+                  />
+                  <button className="btn-primary whitespace-nowrap" onClick={() => useStock(item)}>
+                    Confirm use
+                  </button>
+                </div>
+              )}
+              {useError && usingId === item.id && (
+                <p className="text-xs text-clay mt-1">{useError}</p>
+              )}
 
               {stockingId === item.id && (
                 <div className="mt-3 grid grid-cols-3 gap-2">

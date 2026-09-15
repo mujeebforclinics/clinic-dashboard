@@ -45,9 +45,9 @@ type Snapshot = {
 
 const STATUS_COLORS: Record<string, string> = {
   Scheduled: "#1D7874",
-  Completed: "#1C2321",
+  Completed: "#6D5DD3",
   Cancelled: "#B5563C",
-  "No-show": "#D8B4A0",
+  "No-show": "#D97706",
 };
 const METHOD_COLORS: Record<string, string> = { Cash: "#1D7874", UPI: "#6D5DD3", Card: "#D6537A" };
 const PIN_COLORS = [

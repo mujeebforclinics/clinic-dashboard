@@ -105,30 +105,25 @@ export default function OverviewTab({ clinicId }: { clinicId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clinicId]);
 
-  let trendColor = "text-ink/60";
-  let trendBg = "bg-ink/5";
+  let trendColor = "text-white";
+  let trendBg = "bg-white/20";
   let trendLabel = "-";
   if (todayRevenue !== null && yesterdayRevenue !== null && yesterdayRevenue > 0) {
     const pctChange = ((todayRevenue - yesterdayRevenue) / yesterdayRevenue) * 100;
     if (pctChange >= 0) {
-      trendColor = "text-teal";
-      trendBg = "bg-teal/10";
       trendLabel = `▲ ${pctChange.toFixed(0)}% vs yesterday`;
     } else if (pctChange >= -25) {
-      trendColor = "text-amber-700";
-      trendBg = "bg-amber-100";
       trendLabel = `▼ ${Math.abs(pctChange).toFixed(0)}% vs yesterday`;
     } else {
-      trendColor = "text-clay";
-      trendBg = "bg-clay/10";
       trendLabel = `▼ ${Math.abs(pctChange).toFixed(0)}% vs yesterday`;
     }
   }
 
   return (
     <div className="space-y-5">
-      <div className="card p-6 md:p-8 bg-gradient-to-br from-teal/10 via-white to-white">
-        <p className="text-sm text-ink/60 mb-1">Today's collection</p>
+      {/* Bold gradient hero */}
+      <div className="rounded-2xl p-6 md:p-8 shadow-lg text-white bg-gradient-to-br from-teal via-teal to-[#134f4c]">
+        <p className="text-sm text-white/80 mb-1">Today's collection</p>
         <div className="flex items-end gap-3 flex-wrap">
           <p className="font-display text-4xl md:text-5xl font-semibold">
             {todayRevenue === null ? "…" : formatCurrency(todayRevenue)}
@@ -137,55 +132,52 @@ export default function OverviewTab({ clinicId }: { clinicId: string }) {
             {trendLabel}
           </span>
         </div>
-        <div className="flex gap-6 mt-4 text-sm text-ink/60">
-          <span>This week: <strong className="text-ink">{weekRevenue === null ? "…" : formatCurrency(weekRevenue)}</strong></span>
-          <span>This month: <strong className="text-ink">{monthRevenue === null ? "…" : formatCurrency(monthRevenue)}</strong></span>
+        <div className="flex gap-6 mt-4 text-sm text-white/80">
+          <span>This week: <strong className="text-white">{weekRevenue === null ? "…" : formatCurrency(weekRevenue)}</strong></span>
+          <span>This month: <strong className="text-white">{monthRevenue === null ? "…" : formatCurrency(monthRevenue)}</strong></span>
         </div>
       </div>
 
+      {/* Bold colorful stat blocks */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="card p-5 bg-teal/5 border border-teal/20">
-          <p className="text-sm text-ink/60">Today's appointments</p>
-          <p className="font-display text-2xl font-semibold mt-1 text-teal">
+        <div className="rounded-2xl p-5 shadow-lg text-white bg-gradient-to-br from-violet to-[#4a3f99]">
+          <p className="text-sm text-white/80">Today's appointments</p>
+          <p className="font-display text-2xl font-semibold mt-1">
             {todayCount === null ? "…" : todayCount}
           </p>
         </div>
 
         <button
           onClick={() => setShowPatientList(!showPatientList)}
-          className="card p-5 bg-violet/5 border border-violet/20 text-left hover:bg-violet/10 transition"
+          className="rounded-2xl p-5 shadow-lg text-white text-left bg-gradient-to-br from-rose to-[#a13a58] hover:opacity-90 transition"
         >
-          <p className="text-sm text-ink/60">New / Returning today</p>
-          <p className="font-display text-2xl font-semibold mt-1 text-violet">
+          <p className="text-sm text-white/80">New / Returning today</p>
+          <p className="font-display text-2xl font-semibold mt-1">
             {newNames.length + returningNames.length === 0 ? "…" : `${newNames.length} / ${returningNames.length}`}
           </p>
-          <p className="text-xs text-violet/70 mt-0.5 underline underline-offset-2">
+          <p className="text-xs text-white/70 mt-0.5 underline underline-offset-2">
             {showPatientList ? "Hide names" : "View names"}
           </p>
         </button>
 
         <div
-          className={`card p-5 border ${
-            (outstandingTotal ?? 0) > 0
-              ? "bg-clay/5 border-clay/20"
-              : "bg-teal/5 border-teal/20"
+          className={`rounded-2xl p-5 shadow-lg text-white bg-gradient-to-br ${
+            (outstandingTotal ?? 0) > 0 ? "from-clay to-[#8a3f2b]" : "from-sage to-[#3f5a50]"
           }`}
         >
-          <p className="text-sm text-ink/60">Outstanding dues</p>
-          <p className={`font-display text-2xl font-semibold mt-1 ${(outstandingTotal ?? 0) > 0 ? "text-clay" : "text-teal"}`}>
+          <p className="text-sm text-white/80">Outstanding dues</p>
+          <p className="font-display text-2xl font-semibold mt-1">
             {outstandingTotal === null ? "…" : formatCurrency(outstandingTotal)}
           </p>
         </div>
 
         <div
-          className={`card p-5 border ${
-            (lowStockCount ?? 0) > 0
-              ? "bg-clay/5 border-clay/20"
-              : "bg-teal/5 border-teal/20"
+          className={`rounded-2xl p-5 shadow-lg text-white bg-gradient-to-br ${
+            (lowStockCount ?? 0) > 0 ? "from-amber-600 to-amber-800" : "from-sage to-[#3f5a50]"
           }`}
         >
-          <p className="text-sm text-ink/60">Low stock items</p>
-          <p className={`font-display text-2xl font-semibold mt-1 ${(lowStockCount ?? 0) > 0 ? "text-clay" : "text-teal"}`}>
+          <p className="text-sm text-white/80">Low stock items</p>
+          <p className="font-display text-2xl font-semibold mt-1">
             {lowStockCount === null ? "…" : lowStockCount}
           </p>
         </div>
@@ -193,7 +185,7 @@ export default function OverviewTab({ clinicId }: { clinicId: string }) {
 
       {showPatientList && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="card p-4 bg-violet/5 border border-violet/20">
+          <div className="rounded-2xl p-4 shadow-lg bg-violet/10 border border-violet/30">
             <p className="text-sm font-medium text-violet mb-2">New today ({newNames.length})</p>
             {newNames.length === 0 ? (
               <p className="text-sm text-ink/40">None yet</p>
@@ -205,7 +197,7 @@ export default function OverviewTab({ clinicId }: { clinicId: string }) {
               </ul>
             )}
           </div>
-          <div className="card p-4 bg-sage/5 border border-sage/20">
+          <div className="rounded-2xl p-4 shadow-lg bg-sage/10 border border-sage/30">
             <p className="text-sm font-medium text-sage mb-2">Returning today ({returningNames.length})</p>
             {returningNames.length === 0 ? (
               <p className="text-sm text-ink/40">None yet</p>
@@ -220,9 +212,9 @@ export default function OverviewTab({ clinicId }: { clinicId: string }) {
         </div>
       )}
 
-      <div className="card p-5 bg-rose/5 border border-rose/20 inline-flex items-center gap-3 w-auto">
-        <span className="text-sm text-ink/60">Referred to lab (all time)</span>
-        <span className="font-display text-xl font-semibold text-rose">
+      <div className="rounded-2xl p-5 shadow-lg text-white bg-gradient-to-br from-rose to-[#a13a58] inline-flex items-center gap-3 w-auto">
+        <span className="text-sm text-white/80">Referred to lab (all time)</span>
+        <span className="font-display text-xl font-semibold">
           {labReferrals === null ? "…" : labReferrals}
         </span>
       </div>
