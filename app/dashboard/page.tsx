@@ -27,6 +27,28 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [clinic, setClinic] = useState<Clinic | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
+  const [subBlocked, setSubBlocked] = useState<string | null>(null);
+
+  const checkSubscription = async (clinicId: string) => {
+    const { data: sub } = await supabase
+      .from("subscriptions")
+      .select("status, trial_ends_at")
+      .eq("clinic_id", clinicId)
+      .single();
+
+    if (!sub) return; // no subscription row yet — don't block, nothing to check
+
+    if (sub.status === "cancelled") {
+      setSubBlocked("cancelled");
+      return;
+    }
+    if (sub.status === "trial" && sub.trial_ends_at) {
+      const expired = new Date(sub.trial_ends_at).getTime() < Date.now();
+      if (expired) {
+        setSubBlocked("trial_expired");
+      }
+    }
+  };
 
   useEffect(() => {
     const init = async () => {
@@ -50,6 +72,7 @@ export default function DashboardPage() {
           .eq("id", link.clinic_id)
           .single();
         setClinic(clinicRow);
+        await checkSubscription(link.clinic_id);
         setLoading(false);
         return;
       }
@@ -79,6 +102,7 @@ export default function DashboardPage() {
             clinic_id: newClinic.id,
             plan: "standard",
             status: "trial",
+            trial_ends_at: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
           });
           setClinic(newClinic);
           setLoading(false);
@@ -114,6 +138,26 @@ export default function DashboardPage() {
             Something went wrong linking your account to a clinic. Please
             contact support or try signing up again.
           </p>
+        </div>
+      </main>
+    );
+  }
+
+  if (subBlocked) {
+    return (
+      <main className="min-h-screen flex items-center justify-center px-4">
+        <div className="card p-8 text-center max-w-md">
+          <p className="font-display text-xl font-semibold mb-2">
+            {subBlocked === "cancelled" ? "Subscription cancelled" : "Trial period has ended"}
+          </p>
+          <p className="text-sm text-ink/60 mb-5">
+            {subBlocked === "cancelled"
+              ? "This clinic's subscription has been cancelled. Contact us to reactivate access."
+              : "Your free trial has ended. Contact us to continue using the dashboard."}
+          </p>
+          <button className="btn-primary" onClick={handleLogout}>
+            Log out
+          </button>
         </div>
       </main>
     );
