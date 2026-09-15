@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { formatCurrency } from "@/lib/format";
 import type { Invoice, Patient, Doctor } from "@/lib/types";
+import Spinner from "@/components/Spinner";
 
 const TREATMENTS = [
   "Consultation", "Scaling & Polishing", "Cavity Filling", "Root Canal Treatment",
@@ -160,7 +161,7 @@ export default function BillingTab({ clinicId }: { clinicId: string }) {
             disabled={saving}
             className="btn-primary col-span-2"
           >
-            {saving ? "Creating…" : "Create invoice"}
+            {saving ? (<><Spinner size={14} className="mr-1.5" />Creating</>) : "Create invoice"}
           </button>
         </form>
       )}

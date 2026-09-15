@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import type { Patient } from "@/lib/types";
+import Spinner from "@/components/Spinner";
 
 export default function PatientsTab({ clinicId }: { clinicId: string }) {
   const [patients, setPatients] = useState<Patient[]>([]);
@@ -113,7 +114,7 @@ export default function PatientsTab({ clinicId }: { clinicId: string }) {
             disabled={saving}
             className="btn-primary col-span-2"
           >
-            {saving ? "Saving…" : "Save patient"}
+            {saving ? (<><Spinner size={14} className="mr-1.5" />Saving</>) : "Save patient"}
           </button>
         </form>
       )}

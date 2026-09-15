@@ -1,5 +1,6 @@
 "use client";
 
+import Spinner from "@/components/Spinner";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
@@ -146,7 +147,7 @@ export default function InventoryTab({ clinicId }: { clinicId: string }) {
             disabled={saving}
             className="btn-primary col-span-2"
           >
-            {saving ? "Saving…" : "Save item"}
+            {saving ? (<><Spinner size={14} className="mr-1.5" />Saving</>) : "Save item"}
           </button>
         </form>
       )}

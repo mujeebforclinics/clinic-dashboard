@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import type { Appointment, Patient, Doctor } from "@/lib/types";
+import Spinner from "@/components/Spinner";
 
 export default function AppointmentsTab({ clinicId }: { clinicId: string }) {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
@@ -22,6 +23,7 @@ export default function AppointmentsTab({ clinicId }: { clinicId: string }) {
   const [newDoctorName, setNewDoctorName] = useState("");
   const [newDoctorSpecialty, setNewDoctorSpecialty] = useState("");
   const [savingDoctor, setSavingDoctor] = useState(false);
+  const [doctorError, setDoctorError] = useState("");
 
   const load = async () => {
     const [{ data: appts }, { data: pts }, { data: docs }] = await Promise.all([
@@ -48,6 +50,16 @@ export default function AppointmentsTab({ clinicId }: { clinicId: string }) {
   const handleAddDoctor = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newDoctorName.trim()) return;
+    setDoctorError("");
+
+    const isDuplicate = doctors.some(
+      (d) => d.name.trim().toLowerCase() === newDoctorName.trim().toLowerCase()
+    );
+    if (isDuplicate) {
+      setDoctorError(`"${newDoctorName.trim()}" is already added.`);
+      return;
+    }
+
     setSavingDoctor(true);
     await supabase.from("doctors").insert({
       clinic_id: clinicId,
@@ -138,8 +150,13 @@ export default function AppointmentsTab({ clinicId }: { clinicId: string }) {
               value={newDoctorSpecialty}
               onChange={(e) => setNewDoctorSpecialty(e.target.value)}
             />
+            {doctorError && (
+              <p className="col-span-2 text-sm text-clay bg-clay/10 rounded-lg px-3 py-2">
+                {doctorError}
+              </p>
+            )}
             <button type="submit" disabled={savingDoctor} className="btn-primary col-span-2">
-              {savingDoctor ? "Adding…" : "Add doctor"}
+              {savingDoctor ? (<><Spinner size={14} className="mr-1.5" />Adding</>) : "Add doctor"}
             </button>
           </form>
         </div>
@@ -213,7 +230,7 @@ export default function AppointmentsTab({ clinicId }: { clinicId: string }) {
             disabled={saving}
             className="btn-primary col-span-2"
           >
-            {saving ? "Booking…" : "Book appointment"}
+            {saving ? (<><Spinner size={14} className="mr-1.5" />Booking</>) : "Book appointment"}
           </button>
         </form>
       )}
