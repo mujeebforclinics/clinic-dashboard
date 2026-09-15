@@ -508,10 +508,31 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
                     <p className="text-xs text-ink/50 mt-3">Pending dues</p>
                     <p className={`font-display text-2xl md:text-3xl font-semibold mt-1 ${data.pendingDuesTotal > 0 ? "text-clay" : "text-ink"}`}>{formatCurrency(data.pendingDuesTotal)}</p>
                   </div>
+                  <button onClick={() => setActiveTile("appointments")} className="card p-5 text-left hover:shadow-lg transition">
+                    <div className="flex items-center justify-between">
+                      <span className="w-10 h-10 rounded-full flex items-center justify-center text-lg bg-violet/10">📅</span>
+                      <span className="text-[10px] font-semibold px-2 py-1 rounded-full bg-violet/10 text-violet">today</span>
+                    </div>
+                    <p className="text-xs text-ink/50 mt-3">Appointments today</p>
+                    <p className="font-display text-2xl md:text-3xl font-semibold text-ink mt-1">{data.totalAppts}</p>
+                  </button>
+                  <button onClick={() => setActiveTile("lowStock")} className="card p-5 text-left hover:shadow-lg transition">
+                    <div className="flex items-center justify-between">
+                      <span className={`w-10 h-10 rounded-full flex items-center justify-center text-lg ${data.lowStockCount > 0 ? "bg-clay/10" : "bg-teal/10"}`}>📦</span>
+                      {data.lowStockCount > 0 && (
+                        <span className="text-[10px] font-semibold px-2 py-1 rounded-full bg-clay/10 text-clay">alert</span>
+                      )}
+                    </div>
+                    <p className="text-xs text-ink/50 mt-3">Low stock items</p>
+                    <p className={`font-display text-2xl md:text-3xl font-semibold mt-1 ${data.lowStockCount > 0 ? "text-clay" : "text-ink"}`}>{data.lowStockCount}</p>
+                  </button>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <Tile icon="📅" label="Appointments today" value={String(data.totalAppts)} onClick={() => setActiveTile("appointments")} accentIndex={0} />
+                <div className="pt-2 pb-1">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-ink/40">More details</p>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   <Tile
                     icon="📈"
                     label="Revenue, 7 days"
@@ -529,10 +550,9 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
                     accentIndex={2}
                   />
                   <Tile icon="💳" label="Payment methods" value={`${data.paymentMethods.length} types`} onClick={() => setActiveTile("paymentMethods")} accentIndex={3} />
-                  <Tile icon="👨‍⚕️" label="Business by doctor" value={`${data.byDoctor.length} doctors`} sub={data.byDoctor[0] ? `Top: ${data.byDoctor[0].name}` : undefined} onClick={() => setActiveTile("byDoctor")} wide accentIndex={0} />
+                  <Tile icon="👨‍⚕️" label="Business by doctor" value={`${data.byDoctor.length} doctors`} sub={data.byDoctor[0] ? `Top: ${data.byDoctor[0].name}` : undefined} onClick={() => setActiveTile("byDoctor")} accentIndex={0} />
                   <Tile icon="🦷" label="Top treatments" value={data.topTreatmentsWeek[0]?.treatment ?? "No data yet"} sub={data.topTreatmentsWeek[0] ? formatCurrency(data.topTreatmentsWeek[0].revenue) : undefined} onClick={() => setActiveTile("treatments")} accentIndex={1} />
                   <Tile icon="📍" label="Patient localities" value={`${data.topLocalities.length} areas`} sub={data.topLocalities[0]?.locality} onClick={() => setActiveTile("localities")} accentIndex={2} />
-                  <Tile icon="📦" label="Low stock" value={String(data.lowStockCount)} alert={data.lowStockCount > 0} onClick={() => setActiveTile("lowStock")} />
                 </div>
               </div>
             )}
