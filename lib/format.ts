@@ -5,3 +5,10 @@ export function formatCurrency(amount: number): string {
     maximumFractionDigits: 0,
   }).format(amount || 0);
 }
+
+export function formatPatientId(clinicName: string, patientNumber: number | null): string {
+  if (!patientNumber) return "-";
+  const prefix =
+    (clinicName || "PT").replace(/[^a-zA-Z]/g, "").slice(0, 3).toUpperCase() || "PT";
+  return `${prefix}-${1000 + patientNumber}`;
+}

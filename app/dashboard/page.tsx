@@ -152,7 +152,7 @@ export default function DashboardPage() {
         </nav>
 
         {activeTab === "overview" && <OverviewTab clinicId={clinic.id} />}
-        {activeTab === "patients" && <PatientsTab clinicId={clinic.id} />}
+        {activeTab === "patients" && <PatientsTab clinicId={clinic.id} clinicName={clinic.name} />}
         {activeTab === "appointments" && (
           <AppointmentsTab clinicId={clinic.id} />
         )}

@@ -14,6 +14,7 @@ export type Patient = {
   gender: string | null;
   address: string | null;
   locality: string | null;
+  patient_number: number | null;
   created_at: string;
 };
 

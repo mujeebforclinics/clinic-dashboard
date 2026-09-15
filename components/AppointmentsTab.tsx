@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import type { Appointment, Patient, Doctor } from "@/lib/types";
 import Spinner from "@/components/Spinner";
+import Modal from "@/components/Modal";
+import { formatCurrency } from "@/lib/format";
 
 export default function AppointmentsTab({ clinicId }: { clinicId: string }) {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
@@ -24,6 +26,39 @@ export default function AppointmentsTab({ clinicId }: { clinicId: string }) {
   const [newDoctorSpecialty, setNewDoctorSpecialty] = useState("");
   const [savingDoctor, setSavingDoctor] = useState(false);
   const [doctorError, setDoctorError] = useState("");
+
+  const [profileDoctor, setProfileDoctor] = useState<Doctor | null>(null);
+  const [profileStats, setProfileStats] = useState<{
+    apptCount: number;
+    patientCount: number;
+    revenue: number;
+    labReferrals: { lab: string; count: number }[];
+  } | null>(null);
+
+  const openDoctorProfile = async (d: Doctor) => {
+    setProfileDoctor(d);
+    setProfileStats(null);
+    const [{ data: appts }, { data: invs }, { data: labRows }] = await Promise.all([
+      supabase.from("appointments").select("patient_id").eq("clinic_id", clinicId).eq("doctor_id", d.id),
+      supabase.from("invoices").select("total_amount, payments(amount)").eq("clinic_id", clinicId).eq("doctor_id", d.id),
+      supabase.from("appointments").select("lab_name").eq("clinic_id", clinicId).eq("doctor_id", d.id).eq("referred_to_lab", true).not("lab_name", "is", null),
+    ]);
+    const revenue = (invs ?? []).reduce((sum: number, inv: any) => {
+      return sum + (inv.payments ?? []).reduce((s: number, p: any) => s + Number(p.amount), 0);
+    }, 0);
+    const uniquePatients = new Set((appts ?? []).map((a: any) => a.patient_id));
+    const labCounts: Record<string, number> = {};
+    (labRows ?? []).forEach((r: any) => {
+      const lab = r.lab_name ?? "Unknown";
+      labCounts[lab] = (labCounts[lab] ?? 0) + 1;
+    });
+    setProfileStats({
+      apptCount: (appts ?? []).length,
+      patientCount: uniquePatients.size,
+      revenue,
+      labReferrals: Object.entries(labCounts).map(([lab, count]) => ({ lab, count })),
+    });
+  };
 
   const load = async () => {
     const [{ data: appts }, { data: pts }, { data: docs }] = await Promise.all([
@@ -130,10 +165,14 @@ export default function AppointmentsTab({ clinicId }: { clinicId: string }) {
               <p className="text-sm text-ink/60">No doctors added yet.</p>
             )}
             {doctors.map((d) => (
-              <div key={d.id} className="flex items-center justify-between text-sm bg-sand rounded-lg px-3 py-2">
+              <button
+                key={d.id}
+                onClick={() => openDoctorProfile(d)}
+                className="w-full flex items-center justify-between text-sm bg-sand rounded-lg px-3 py-2 hover:bg-violet/10 transition text-left"
+              >
                 <span>{d.name}</span>
                 {d.specialty && <span className="text-violet text-xs font-medium">{d.specialty}</span>}
-              </div>
+              </button>
             ))}
           </div>
           <form onSubmit={handleAddDoctor} className="grid grid-cols-2 gap-2">
@@ -281,6 +320,53 @@ export default function AppointmentsTab({ clinicId }: { clinicId: string }) {
           </div>
         ))}
       </div>
+
+      <Modal
+        open={!!profileDoctor}
+        onClose={() => setProfileDoctor(null)}
+        title={profileDoctor?.name ?? ""}
+      >
+        {profileDoctor && (
+          <div className="space-y-4">
+            <p className="text-sm text-violet font-medium">{profileDoctor.specialty}</p>
+            {!profileStats ? (
+              <p className="text-sm text-ink/60"><Spinner size={14} className="mr-1.5" />Loading profile…</p>
+            ) : (
+              <>
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="bg-teal/10 rounded-lg p-3 text-center">
+                    <p className="font-display text-lg font-semibold text-teal">{formatCurrency(profileStats.revenue)}</p>
+                    <p className="text-[10px] text-ink/50">revenue</p>
+                  </div>
+                  <div className="bg-violet/10 rounded-lg p-3 text-center">
+                    <p className="font-display text-lg font-semibold text-violet">{profileStats.patientCount}</p>
+                    <p className="text-[10px] text-ink/50">patients</p>
+                  </div>
+                  <div className="bg-sage/10 rounded-lg p-3 text-center">
+                    <p className="font-display text-lg font-semibold text-sage">{profileStats.apptCount}</p>
+                    <p className="text-[10px] text-ink/50">appointments</p>
+                  </div>
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-ink/70 mb-2">Lab referrals</p>
+                  {profileStats.labReferrals.length === 0 ? (
+                    <p className="text-sm text-ink/40">No lab referrals yet</p>
+                  ) : (
+                    <ul className="space-y-1.5">
+                      {profileStats.labReferrals.map((r) => (
+                        <li key={r.lab} className="text-sm bg-rose/5 border border-rose/20 rounded-lg px-3 py-2 flex justify-between">
+                          <span>{r.lab}</span>
+                          <span className="font-semibold text-rose">{r.count}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
