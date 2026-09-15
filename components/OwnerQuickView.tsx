@@ -147,6 +147,7 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
   const [data, setData] = useState<Snapshot | null>(null);
   const [notes, setNotes] = useState<StaffNote[]>([]);
   const [activeTile, setActiveTile] = useState<TileKey | null>(null);
+  const [notesOpen, setNotesOpen] = useState(false);
   const [detail, setDetail] = useState<Detail>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailExtra, setDetailExtra] = useState<any>(null);
@@ -450,9 +451,9 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
               <p className="text-sm text-ink/60"><Spinner size={14} className="mr-1.5" />Loading…</p>
             ) : (
               <div className="space-y-3">
-                <div className="card p-5 shadow-md flex items-center gap-5">
+                <div className="card p-3 shadow-md flex items-center gap-3">
                   <div className="shrink-0 flex flex-col items-center">
-                    <svg width="88" height="88" viewBox="0 0 100 100">
+                    <svg width="56" height="56" viewBox="0 0 100 100">
                       <circle cx="50" cy="50" r="42" stroke="#E4DED2" strokeWidth="10" fill="none" />
                       <circle
                         cx="50" cy="50" r="42"
@@ -462,97 +463,92 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
                         strokeDashoffset={2 * Math.PI * 42 - (Math.max(0, Math.min(100, data.healthScore)) / 100) * (2 * Math.PI * 42)}
                         strokeLinecap="round" transform="rotate(-90 50 50)"
                       />
-                      <text x="50" y="58" textAnchor="middle" fontSize="32" fontWeight="700" fill="#1C2321">{data.healthScore}</text>
+                      <text x="50" y="58" textAnchor="middle" fontSize="28" fontWeight="700" fill="#1C2321">{data.healthScore}</text>
                     </svg>
-                    <p className="text-xs font-medium mt-1">{data.healthLabel}</p>
                   </div>
-                  <div className="flex-1 flex flex-wrap gap-2">
-                    {data.alerts.map((a, i) => {
+                  <div className="flex-1 flex flex-wrap gap-1.5">
+                    {data.alerts.slice(0, 2).map((a, i) => {
                       const isGood = a.severity === "healthy";
                       return (
-                        <span key={i} className={`text-sm rounded-full px-3 py-1.5 ${isGood ? "bg-teal/10 text-teal" : "bg-clay/10 text-clay"}`}>
+                        <span key={i} className={`text-xs rounded-full px-2 py-1 ${isGood ? "bg-teal/10 text-teal" : "bg-clay/10 text-clay"}`}>
                           {isGood ? "🟢" : "🔴"} {a.text}
                         </span>
                       );
                     })}
+                    {data.alerts.length > 2 && (
+                      <span className="text-xs text-ink/40 px-1 py-1">+{data.alerts.length - 2} more</span>
+                    )}
                   </div>
                 </div>
 
                 {notes.length > 0 && (
-                  <div className="space-y-1.5 max-h-28 overflow-y-auto">
-                    {notes.map((n) => (
-                      <div key={n.id} className={`flex items-start justify-between gap-2 rounded-lg px-3 py-2 ${n.urgency === "urgent" ? "bg-clay/10 border border-clay/30" : "bg-teal/10 border border-teal/30"}`}>
-                        <p className="text-xs"><span className={`font-semibold uppercase mr-1 ${n.urgency === "urgent" ? "text-clay" : "text-teal"}`}>{n.urgency === "urgent" ? "Urgent" : "Note"}</span>{n.message}</p>
-                        <button onClick={() => dismissNote(n.id)} className="text-[10px] text-ink/50 shrink-0">✕</button>
-                      </div>
-                    ))}
-                  </div>
+                  <button
+                    onClick={() => setNotesOpen(true)}
+                    className={`w-full flex items-center justify-between rounded-lg px-3 py-2.5 text-left ${
+                      notes.some((n) => n.urgency === "urgent") ? "bg-clay/10 border border-clay/30" : "bg-teal/10 border border-teal/30"
+                    }`}
+                  >
+                    <p className="text-sm truncate">
+                      <span className={`font-semibold uppercase text-xs mr-1.5 ${notes.some((n) => n.urgency === "urgent") ? "text-clay" : "text-teal"}`}>
+                        {notes.length} note{notes.length > 1 ? "s" : ""}
+                      </span>
+                      {notes[0].message}
+                    </p>
+                    <span className="text-xs text-ink/40 shrink-0 ml-2">tap to view</span>
+                  </button>
                 )}
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="card p-5">
-                    <div className="flex items-center justify-between">
-                      <span className="w-10 h-10 rounded-full flex items-center justify-center text-lg bg-teal/10">💰</span>
-                      <span className="text-[10px] font-semibold px-2 py-1 rounded-full bg-teal/10 text-teal">today</span>
-                    </div>
-                    <p className="text-xs text-ink/50 mt-3">Revenue today</p>
-                    <p className="font-display text-2xl md:text-3xl font-semibold text-ink mt-1">{formatCurrency(data.revenue)}</p>
+                <div className="grid grid-cols-4 gap-2">
+                  <div className="card p-3">
+                    <span className="w-8 h-8 rounded-full flex items-center justify-center text-sm bg-teal/10">💰</span>
+                    <p className="text-[11px] text-ink/50 mt-2">Revenue today</p>
+                    <p className="font-display text-lg font-semibold text-ink">{formatCurrency(data.revenue)}</p>
                   </div>
-                  <div className="card p-5">
-                    <div className="flex items-center justify-between">
-                      <span className={`w-10 h-10 rounded-full flex items-center justify-center text-lg ${data.pendingDuesTotal > 0 ? "bg-clay/10" : "bg-teal/10"}`}>⏳</span>
-                      {data.pendingDuesTotal > 0 && (
-                        <span className="text-[10px] font-semibold px-2 py-1 rounded-full bg-clay/10 text-clay">pending</span>
-                      )}
-                    </div>
-                    <p className="text-xs text-ink/50 mt-3">Pending dues</p>
-                    <p className={`font-display text-2xl md:text-3xl font-semibold mt-1 ${data.pendingDuesTotal > 0 ? "text-clay" : "text-ink"}`}>{formatCurrency(data.pendingDuesTotal)}</p>
+                  <div className="card p-3">
+                    <span className={`w-8 h-8 rounded-full flex items-center justify-center text-sm ${data.pendingDuesTotal > 0 ? "bg-clay/10" : "bg-teal/10"}`}>⏳</span>
+                    <p className="text-[11px] text-ink/50 mt-2">Pending dues</p>
+                    <p className={`font-display text-lg font-semibold ${data.pendingDuesTotal > 0 ? "text-clay" : "text-ink"}`}>{formatCurrency(data.pendingDuesTotal)}</p>
                   </div>
-                  <button onClick={() => setActiveTile("appointments")} className="card p-5 text-left hover:shadow-lg transition">
-                    <div className="flex items-center justify-between">
-                      <span className="w-10 h-10 rounded-full flex items-center justify-center text-lg bg-violet/10">📅</span>
-                      <span className="text-[10px] font-semibold px-2 py-1 rounded-full bg-violet/10 text-violet">today</span>
-                    </div>
-                    <p className="text-xs text-ink/50 mt-3">Appointments today</p>
-                    <p className="font-display text-2xl md:text-3xl font-semibold text-ink mt-1">{data.totalAppts}</p>
+                  <button onClick={() => setActiveTile("appointments")} className="card p-3 text-left hover:shadow-lg transition">
+                    <span className="w-8 h-8 rounded-full flex items-center justify-center text-sm bg-violet/10">📅</span>
+                    <p className="text-[11px] text-ink/50 mt-2">Appts today</p>
+                    <p className="font-display text-lg font-semibold text-ink">{data.totalAppts}</p>
                   </button>
-                  <button onClick={() => setActiveTile("lowStock")} className="card p-5 text-left hover:shadow-lg transition">
-                    <div className="flex items-center justify-between">
-                      <span className={`w-10 h-10 rounded-full flex items-center justify-center text-lg ${data.lowStockCount > 0 ? "bg-clay/10" : "bg-teal/10"}`}>📦</span>
-                      {data.lowStockCount > 0 && (
-                        <span className="text-[10px] font-semibold px-2 py-1 rounded-full bg-clay/10 text-clay">alert</span>
-                      )}
-                    </div>
-                    <p className="text-xs text-ink/50 mt-3">Low stock items</p>
-                    <p className={`font-display text-2xl md:text-3xl font-semibold mt-1 ${data.lowStockCount > 0 ? "text-clay" : "text-ink"}`}>{data.lowStockCount}</p>
+                  <button onClick={() => setActiveTile("lowStock")} className="card p-3 text-left hover:shadow-lg transition">
+                    <span className={`w-8 h-8 rounded-full flex items-center justify-center text-sm ${data.lowStockCount > 0 ? "bg-clay/10" : "bg-teal/10"}`}>📦</span>
+                    <p className="text-[11px] text-ink/50 mt-2">Low stock</p>
+                    <p className={`font-display text-lg font-semibold ${data.lowStockCount > 0 ? "text-clay" : "text-ink"}`}>{data.lowStockCount}</p>
                   </button>
-                </div>
-
-                <div className="pt-2 pb-1">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-ink/40">More details</p>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  <Tile
-                    icon="📈"
-                    label="Revenue, 7 days"
-                    value={formatCurrency(data.revenueTrend.reduce((s, d) => s + d.amount, 0))}
-                    onClick={() => setActiveTile("revenueTrend")}
-                    sparkline={data.revenueTrend.map((d) => ({ x: d.day, y: d.amount }))}
-                    accentIndex={1}
-                  />
-                  <Tile
-                    icon="🗓️"
-                    label="Appts this week"
-                    value={String(data.weeklyAppointments.reduce((s, d) => s + d.count, 0))}
-                    onClick={() => setActiveTile("weeklyAppts")}
-                    sparkline={data.weeklyAppointments.map((d) => ({ x: d.day, y: d.count }))}
-                    accentIndex={2}
-                  />
-                  <Tile icon="💳" label="Payment methods" value={`${data.paymentMethods.length} types`} onClick={() => setActiveTile("paymentMethods")} accentIndex={3} />
-                  <Tile icon="👨‍⚕️" label="Business by doctor" value={`${data.byDoctor.length} doctors`} sub={data.byDoctor[0] ? `Top: ${data.byDoctor[0].name}` : undefined} onClick={() => setActiveTile("byDoctor")} accentIndex={0} />
-                  <Tile icon="🦷" label="Top treatments" value={data.topTreatmentsWeek[0]?.treatment ?? "No data yet"} sub={data.topTreatmentsWeek[0] ? formatCurrency(data.topTreatmentsWeek[0].revenue) : undefined} onClick={() => setActiveTile("treatments")} accentIndex={1} />
-                  <Tile icon="📍" label="Patient localities" value={`${data.topLocalities.length} areas`} sub={data.topLocalities[0]?.locality} onClick={() => setActiveTile("localities")} accentIndex={2} />
+                  <button onClick={() => setActiveTile("revenueTrend")} className="card p-3 text-left hover:shadow-lg transition">
+                    <span className="w-8 h-8 rounded-full flex items-center justify-center text-sm bg-teal/10">📈</span>
+                    <p className="text-[11px] text-ink/50 mt-2">Revenue, 7d</p>
+                    <p className="font-display text-lg font-semibold text-ink">{formatCurrency(data.revenueTrend.reduce((s, d) => s + d.amount, 0))}</p>
+                  </button>
+                  <button onClick={() => setActiveTile("weeklyAppts")} className="card p-3 text-left hover:shadow-lg transition">
+                    <span className="w-8 h-8 rounded-full flex items-center justify-center text-sm bg-rose/10">🗓️</span>
+                    <p className="text-[11px] text-ink/50 mt-2">Appts this week</p>
+                    <p className="font-display text-lg font-semibold text-ink">{data.weeklyAppointments.reduce((s, d) => s + d.count, 0)}</p>
+                  </button>
+                  <button onClick={() => setActiveTile("paymentMethods")} className="card p-3 text-left hover:shadow-lg transition">
+                    <span className="w-8 h-8 rounded-full flex items-center justify-center text-sm bg-amber-100">💳</span>
+                    <p className="text-[11px] text-ink/50 mt-2">Payment methods</p>
+                    <p className="font-display text-lg font-semibold text-ink">{data.paymentMethods.length} types</p>
+                  </button>
+                  <button onClick={() => setActiveTile("byDoctor")} className="card p-3 text-left hover:shadow-lg transition">
+                    <span className="w-8 h-8 rounded-full flex items-center justify-center text-sm bg-teal/10">👨‍⚕️</span>
+                    <p className="text-[11px] text-ink/50 mt-2">By doctor</p>
+                    <p className="font-display text-lg font-semibold text-ink">{data.byDoctor.length} docs</p>
+                  </button>
+                  <button onClick={() => setActiveTile("treatments")} className="card p-3 text-left hover:shadow-lg transition">
+                    <span className="w-8 h-8 rounded-full flex items-center justify-center text-sm bg-violet/10">🦷</span>
+                    <p className="text-[11px] text-ink/50 mt-2">Top treatment</p>
+                    <p className="font-display text-sm font-semibold text-ink truncate">{data.topTreatmentsWeek[0]?.treatment ?? "No data"}</p>
+                  </button>
+                  <button onClick={() => setActiveTile("localities")} className="card p-3 text-left hover:shadow-lg transition">
+                    <span className="w-8 h-8 rounded-full flex items-center justify-center text-sm bg-rose/10">📍</span>
+                    <p className="text-[11px] text-ink/50 mt-2">Localities</p>
+                    <p className="font-display text-lg font-semibold text-ink">{data.topLocalities.length} areas</p>
+                  </button>
                 </div>
               </div>
             )}
@@ -561,6 +557,23 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
       )}
 
       {/* ===== Level 1: list/chart popups ===== */}
+
+      <Modal open={notesOpen} onClose={() => setNotesOpen(false)} title="Staff notes">
+        <div className="space-y-2">
+          {notes.map((n) => (
+            <div key={n.id} className={`flex items-start justify-between gap-2 rounded-lg px-3 py-2.5 ${n.urgency === "urgent" ? "bg-clay/10 border border-clay/30" : "bg-teal/10 border border-teal/30"}`}>
+              <p className="text-sm">
+                <span className={`font-semibold uppercase text-xs mr-1.5 ${n.urgency === "urgent" ? "text-clay" : "text-teal"}`}>
+                  {n.urgency === "urgent" ? "Urgent" : "Note"}
+                </span>
+                {n.message}
+              </p>
+              <button onClick={() => dismissNote(n.id)} className="text-xs text-ink/50 shrink-0">✕</button>
+            </div>
+          ))}
+          {notes.length === 0 && <p className="text-sm text-ink/40">No notes right now</p>}
+        </div>
+      </Modal>
 
       <Modal open={activeTile === "appointments"} onClose={() => setActiveTile(null)} title="Appointments today — tap a slice">
         {data && (
