@@ -80,6 +80,13 @@ type Detail =
   | { kind: "status"; status: string }
   | null;
 
+const ACCENTS = [
+  { bg: "bg-teal/10", text: "text-teal", stroke: "#1D7874" },
+  { bg: "bg-violet/10", text: "text-violet", stroke: "#6D5DD3" },
+  { bg: "bg-rose/10", text: "text-rose", stroke: "#D6537A" },
+  { bg: "bg-amber-100", text: "text-amber-700", stroke: "#D97706" },
+];
+
 function Tile({
   icon,
   label,
@@ -89,6 +96,7 @@ function Tile({
   onClick,
   sparkline,
   wide,
+  accentIndex = 0,
 }: {
   icon: string;
   label: string;
@@ -98,34 +106,34 @@ function Tile({
   onClick: () => void;
   sparkline?: { x: string; y: number }[];
   wide?: boolean;
+  accentIndex?: number;
 }) {
+  const accent = alert ? { bg: "bg-clay/10", text: "text-clay", stroke: "#B5563C" } : ACCENTS[accentIndex % ACCENTS.length];
   return (
     <button
       onClick={onClick}
-      className={`rounded-2xl p-5 text-left shadow-md hover:opacity-90 transition text-white flex flex-col justify-between min-h-[132px] ${
-        alert ? "bg-clay" : "bg-teal"
-      } ${wide ? "col-span-2" : ""}`}
+      className={`card p-4 text-left hover:shadow-lg transition flex flex-col justify-between min-h-[140px] ${wide ? "col-span-2" : ""}`}
     >
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <p className="text-xs opacity-80 leading-tight">{label}</p>
-          <p className="font-display text-2xl md:text-3xl font-semibold leading-tight mt-1">{value}</p>
-          {sub && <p className="text-xs opacity-70 mt-1 truncate">{sub}</p>}
-        </div>
-        <span className="text-xl opacity-90 shrink-0">{icon}</span>
+      <div className="flex items-start justify-between">
+        <span className={`w-10 h-10 rounded-full flex items-center justify-center text-lg ${accent.bg}`}>
+          {icon}
+        </span>
+        {alert && (
+          <span className="text-[10px] font-semibold px-2 py-1 rounded-full bg-clay/10 text-clay">
+            attention
+          </span>
+        )}
+      </div>
+      <div className="mt-3">
+        <p className="text-xs text-ink/50">{label}</p>
+        <p className="font-display text-2xl md:text-3xl font-semibold text-ink leading-tight mt-0.5">{value}</p>
+        {sub && <p className={`text-xs mt-1 truncate ${accent.text}`}>{sub}</p>}
       </div>
       {sparkline && sparkline.length > 1 && (
-        <div style={{ width: "100%", height: 40 }} className="mt-2 -mb-1">
+        <div style={{ width: "100%", height: 32 }} className="mt-2">
           <ResponsiveContainer>
             <AreaChart data={sparkline}>
-              <Area
-                type="monotone"
-                dataKey="y"
-                stroke="#ffffff"
-                strokeWidth={2.5}
-                fill="#ffffff"
-                fillOpacity={0.25}
-              />
+              <Area type="monotone" dataKey="y" stroke={accent.stroke} strokeWidth={2} fill={accent.stroke} fillOpacity={0.12} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -482,24 +490,35 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
                 )}
 
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-2xl p-5 bg-teal text-white shadow-md">
-                    <p className="text-xs opacity-80">Revenue today</p>
-                    <p className="font-display text-2xl md:text-3xl font-semibold mt-1">{formatCurrency(data.revenue)}</p>
+                  <div className="card p-5">
+                    <div className="flex items-center justify-between">
+                      <span className="w-10 h-10 rounded-full flex items-center justify-center text-lg bg-teal/10">💰</span>
+                      <span className="text-[10px] font-semibold px-2 py-1 rounded-full bg-teal/10 text-teal">today</span>
+                    </div>
+                    <p className="text-xs text-ink/50 mt-3">Revenue today</p>
+                    <p className="font-display text-2xl md:text-3xl font-semibold text-ink mt-1">{formatCurrency(data.revenue)}</p>
                   </div>
-                  <div className={`rounded-2xl p-5 text-white shadow-md ${data.pendingDuesTotal > 0 ? "bg-clay" : "bg-teal"}`}>
-                    <p className="text-xs opacity-80">Pending dues</p>
-                    <p className="font-display text-2xl md:text-3xl font-semibold mt-1">{formatCurrency(data.pendingDuesTotal)}</p>
+                  <div className="card p-5">
+                    <div className="flex items-center justify-between">
+                      <span className={`w-10 h-10 rounded-full flex items-center justify-center text-lg ${data.pendingDuesTotal > 0 ? "bg-clay/10" : "bg-teal/10"}`}>⏳</span>
+                      {data.pendingDuesTotal > 0 && (
+                        <span className="text-[10px] font-semibold px-2 py-1 rounded-full bg-clay/10 text-clay">pending</span>
+                      )}
+                    </div>
+                    <p className="text-xs text-ink/50 mt-3">Pending dues</p>
+                    <p className={`font-display text-2xl md:text-3xl font-semibold mt-1 ${data.pendingDuesTotal > 0 ? "text-clay" : "text-ink"}`}>{formatCurrency(data.pendingDuesTotal)}</p>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <Tile icon="📅" label="Appointments today" value={String(data.totalAppts)} onClick={() => setActiveTile("appointments")} />
+                  <Tile icon="📅" label="Appointments today" value={String(data.totalAppts)} onClick={() => setActiveTile("appointments")} accentIndex={0} />
                   <Tile
                     icon="📈"
                     label="Revenue, 7 days"
                     value={formatCurrency(data.revenueTrend.reduce((s, d) => s + d.amount, 0))}
                     onClick={() => setActiveTile("revenueTrend")}
                     sparkline={data.revenueTrend.map((d) => ({ x: d.day, y: d.amount }))}
+                    accentIndex={1}
                   />
                   <Tile
                     icon="🗓️"
@@ -507,11 +526,12 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
                     value={String(data.weeklyAppointments.reduce((s, d) => s + d.count, 0))}
                     onClick={() => setActiveTile("weeklyAppts")}
                     sparkline={data.weeklyAppointments.map((d) => ({ x: d.day, y: d.count }))}
+                    accentIndex={2}
                   />
-                  <Tile icon="💳" label="Payment methods" value={`${data.paymentMethods.length} types`} onClick={() => setActiveTile("paymentMethods")} />
-                  <Tile icon="👨‍⚕️" label="Business by doctor" value={`${data.byDoctor.length} doctors`} sub={data.byDoctor[0] ? `Top: ${data.byDoctor[0].name}` : undefined} onClick={() => setActiveTile("byDoctor")} wide />
-                  <Tile icon="🦷" label="Top treatments" value={data.topTreatmentsWeek[0]?.treatment ?? "No data yet"} sub={data.topTreatmentsWeek[0] ? formatCurrency(data.topTreatmentsWeek[0].revenue) : undefined} onClick={() => setActiveTile("treatments")} />
-                  <Tile icon="📍" label="Patient localities" value={`${data.topLocalities.length} areas`} sub={data.topLocalities[0]?.locality} onClick={() => setActiveTile("localities")} />
+                  <Tile icon="💳" label="Payment methods" value={`${data.paymentMethods.length} types`} onClick={() => setActiveTile("paymentMethods")} accentIndex={3} />
+                  <Tile icon="👨‍⚕️" label="Business by doctor" value={`${data.byDoctor.length} doctors`} sub={data.byDoctor[0] ? `Top: ${data.byDoctor[0].name}` : undefined} onClick={() => setActiveTile("byDoctor")} wide accentIndex={0} />
+                  <Tile icon="🦷" label="Top treatments" value={data.topTreatmentsWeek[0]?.treatment ?? "No data yet"} sub={data.topTreatmentsWeek[0] ? formatCurrency(data.topTreatmentsWeek[0].revenue) : undefined} onClick={() => setActiveTile("treatments")} accentIndex={1} />
+                  <Tile icon="📍" label="Patient localities" value={`${data.topLocalities.length} areas`} sub={data.topLocalities[0]?.locality} onClick={() => setActiveTile("localities")} accentIndex={2} />
                   <Tile icon="📦" label="Low stock" value={String(data.lowStockCount)} alert={data.lowStockCount > 0} onClick={() => setActiveTile("lowStock")} />
                 </div>
               </div>
