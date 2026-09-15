@@ -13,6 +13,8 @@ import {
   Tooltip,
   LineChart,
   Line,
+  AreaChart,
+  Area,
   XAxis,
   YAxis,
   BarChart,
@@ -79,40 +81,52 @@ type Detail =
   | null;
 
 function Tile({
+  icon,
   label,
   value,
   sub,
   alert,
   onClick,
   sparkline,
-  sparklineColor = "#ffffff",
+  wide,
 }: {
+  icon: string;
   label: string;
   value: string;
   sub?: string;
   alert?: boolean;
   onClick: () => void;
   sparkline?: { x: string; y: number }[];
-  sparklineColor?: string;
+  wide?: boolean;
 }) {
   return (
     <button
       onClick={onClick}
       className={`rounded-2xl p-5 text-left shadow-md hover:opacity-90 transition text-white flex flex-col justify-between min-h-[132px] ${
         alert ? "bg-clay" : "bg-teal"
-      }`}
+      } ${wide ? "col-span-2" : ""}`}
     >
-      <div>
-        <p className="text-xs opacity-80 leading-tight">{label}</p>
-        <p className="font-display text-2xl md:text-3xl font-semibold leading-tight mt-1">{value}</p>
-        {sub && <p className="text-xs opacity-70 mt-1 truncate">{sub}</p>}
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <p className="text-xs opacity-80 leading-tight">{label}</p>
+          <p className="font-display text-2xl md:text-3xl font-semibold leading-tight mt-1">{value}</p>
+          {sub && <p className="text-xs opacity-70 mt-1 truncate">{sub}</p>}
+        </div>
+        <span className="text-xl opacity-90 shrink-0">{icon}</span>
       </div>
       {sparkline && sparkline.length > 1 && (
-        <div style={{ width: "100%", height: 36 }} className="mt-2">
+        <div style={{ width: "100%", height: 40 }} className="mt-2 -mb-1">
           <ResponsiveContainer>
-            <LineChart data={sparkline}>
-              <Line type="monotone" dataKey="y" stroke={sparklineColor} strokeWidth={2} dot={false} />
-            </LineChart>
+            <AreaChart data={sparkline}>
+              <Area
+                type="monotone"
+                dataKey="y"
+                stroke="#ffffff"
+                strokeWidth={2.5}
+                fill="#ffffff"
+                fillOpacity={0.25}
+              />
+            </AreaChart>
           </ResponsiveContainer>
         </div>
       )}
@@ -167,7 +181,7 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
       supabase.from("doctors").select("id, name, specialty").eq("clinic_id", clinicId),
       supabase.from("invoices").select("doctor_id, total_amount, payments(amount)").eq("clinic_id", clinicId).limit(3000),
       supabase.from("appointments").select("doctor_id, lab_name, doctors(name)").eq("clinic_id", clinicId).eq("referred_to_lab", true).not("lab_name", "is", null),
-      supabase.from("invoices").select("treatment, payments(amount, paid_at)").eq("clinic_id", clinicId).not("treatment", "is", null).limit(3000),
+      supabase.from("payments").select("amount, paid_at, invoices!inner(treatment)").eq("clinic_id", clinicId).gte("paid_at", sevenDaysAgoStr).not("invoices.treatment", "is", null),
     ]);
 
     const counts = { scheduled: 0, completed: 0, cancelled: 0, noShow: 0 };
@@ -270,15 +284,10 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
     const labReferrals = Object.values(labCounts).sort((a, b) => b.count - a.count);
 
     const treatmentWeek: Record<string, number> = {};
-    (treatmentRows ?? []).forEach((inv: any) => {
-      const name = inv.treatment;
+    (treatmentRows ?? []).forEach((p: any) => {
+      const name = p.invoices?.treatment;
       if (!name) return;
-      (inv.payments ?? []).forEach((p: any) => {
-        const payDay = p.paid_at.slice(0, 10);
-        if (payDay >= sevenDaysAgoStr) {
-          treatmentWeek[name] = (treatmentWeek[name] ?? 0) + Number(p.amount);
-        }
-      });
+      treatmentWeek[name] = (treatmentWeek[name] ?? 0) + Number(p.amount);
     });
     const topTreatmentsWeek = Object.entries(treatmentWeek)
       .map(([treatment, revenue]) => ({ treatment, revenue }))
@@ -484,24 +493,26 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <Tile label="Appointments today" value={String(data.totalAppts)} onClick={() => setActiveTile("appointments")} />
+                  <Tile icon="📅" label="Appointments today" value={String(data.totalAppts)} onClick={() => setActiveTile("appointments")} />
                   <Tile
+                    icon="📈"
                     label="Revenue, 7 days"
                     value={formatCurrency(data.revenueTrend.reduce((s, d) => s + d.amount, 0))}
                     onClick={() => setActiveTile("revenueTrend")}
                     sparkline={data.revenueTrend.map((d) => ({ x: d.day, y: d.amount }))}
                   />
                   <Tile
+                    icon="🗓️"
                     label="Appts this week"
                     value={String(data.weeklyAppointments.reduce((s, d) => s + d.count, 0))}
                     onClick={() => setActiveTile("weeklyAppts")}
                     sparkline={data.weeklyAppointments.map((d) => ({ x: d.day, y: d.count }))}
                   />
-                  <Tile label="Payment methods" value={`${data.paymentMethods.length} types`} onClick={() => setActiveTile("paymentMethods")} />
-                  <Tile label="Business by doctor" value={`${data.byDoctor.length} doctors`} sub={data.byDoctor[0]?.name} onClick={() => setActiveTile("byDoctor")} />
-                  <Tile label="Top treatments" value={data.topTreatmentsWeek[0]?.treatment ?? "-"} sub="tap for full list" onClick={() => setActiveTile("treatments")} />
-                  <Tile label="Patient localities" value={`${data.topLocalities.length} areas`} sub={data.topLocalities[0]?.locality} onClick={() => setActiveTile("localities")} />
-                  <Tile label="Low stock" value={String(data.lowStockCount)} alert={data.lowStockCount > 0} onClick={() => setActiveTile("lowStock")} />
+                  <Tile icon="💳" label="Payment methods" value={`${data.paymentMethods.length} types`} onClick={() => setActiveTile("paymentMethods")} />
+                  <Tile icon="👨‍⚕️" label="Business by doctor" value={`${data.byDoctor.length} doctors`} sub={data.byDoctor[0] ? `Top: ${data.byDoctor[0].name}` : undefined} onClick={() => setActiveTile("byDoctor")} wide />
+                  <Tile icon="🦷" label="Top treatments" value={data.topTreatmentsWeek[0]?.treatment ?? "No data yet"} sub={data.topTreatmentsWeek[0] ? formatCurrency(data.topTreatmentsWeek[0].revenue) : undefined} onClick={() => setActiveTile("treatments")} />
+                  <Tile icon="📍" label="Patient localities" value={`${data.topLocalities.length} areas`} sub={data.topLocalities[0]?.locality} onClick={() => setActiveTile("localities")} />
+                  <Tile icon="📦" label="Low stock" value={String(data.lowStockCount)} alert={data.lowStockCount > 0} onClick={() => setActiveTile("lowStock")} />
                 </div>
               </div>
             )}
