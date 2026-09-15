@@ -41,6 +41,7 @@ type Snapshot = {
   healthLabel: string;
   alerts: { text: string; severity: "critical" | "attention" | "monitor" | "healthy" }[];
   topTreatmentsWeek: { treatment: string; revenue: number }[];
+  lowStockCount: number;
 };
 
 // Two-color system: teal is the everyday color, clay is reserved for
@@ -83,23 +84,38 @@ function Tile({
   sub,
   alert,
   onClick,
+  sparkline,
+  sparklineColor = "#ffffff",
 }: {
   label: string;
   value: string;
   sub?: string;
   alert?: boolean;
   onClick: () => void;
+  sparkline?: { x: string; y: number }[];
+  sparklineColor?: string;
 }) {
   return (
     <button
       onClick={onClick}
-      className={`rounded-xl p-3 text-left shadow-md hover:opacity-90 transition text-white ${
+      className={`rounded-2xl p-5 text-left shadow-md hover:opacity-90 transition text-white flex flex-col justify-between min-h-[132px] ${
         alert ? "bg-clay" : "bg-teal"
       }`}
     >
-      <p className="text-[11px] opacity-80 leading-tight">{label}</p>
-      <p className="font-display text-xl font-semibold leading-tight mt-0.5">{value}</p>
-      {sub && <p className="text-[10px] opacity-70 mt-0.5 truncate">{sub}</p>}
+      <div>
+        <p className="text-xs opacity-80 leading-tight">{label}</p>
+        <p className="font-display text-2xl md:text-3xl font-semibold leading-tight mt-1">{value}</p>
+        {sub && <p className="text-xs opacity-70 mt-1 truncate">{sub}</p>}
+      </div>
+      {sparkline && sparkline.length > 1 && (
+        <div style={{ width: "100%", height: 36 }} className="mt-2">
+          <ResponsiveContainer>
+            <LineChart data={sparkline}>
+              <Line type="monotone" dataKey="y" stroke={sparklineColor} strokeWidth={2} dot={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
     </button>
   );
 }
@@ -309,6 +325,7 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
       healthLabel,
       alerts,
       topTreatmentsWeek,
+      lowStockCount: lowStockItems.length,
     });
   };
 
@@ -416,9 +433,9 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
               <p className="text-sm text-ink/60"><Spinner size={14} className="mr-1.5" />Loading…</p>
             ) : (
               <div className="space-y-3">
-                <div className="card p-3 shadow-md flex items-center gap-4">
+                <div className="card p-5 shadow-md flex items-center gap-5">
                   <div className="shrink-0 flex flex-col items-center">
-                    <svg width="60" height="60" viewBox="0 0 100 100">
+                    <svg width="88" height="88" viewBox="0 0 100 100">
                       <circle cx="50" cy="50" r="42" stroke="#E4DED2" strokeWidth="10" fill="none" />
                       <circle
                         cx="50" cy="50" r="42"
@@ -428,15 +445,15 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
                         strokeDashoffset={2 * Math.PI * 42 - (Math.max(0, Math.min(100, data.healthScore)) / 100) * (2 * Math.PI * 42)}
                         strokeLinecap="round" transform="rotate(-90 50 50)"
                       />
-                      <text x="50" y="57" textAnchor="middle" fontSize="30" fontWeight="700" fill="#1C2321">{data.healthScore}</text>
+                      <text x="50" y="58" textAnchor="middle" fontSize="32" fontWeight="700" fill="#1C2321">{data.healthScore}</text>
                     </svg>
-                    <p className="text-[10px] font-medium">{data.healthLabel}</p>
+                    <p className="text-xs font-medium mt-1">{data.healthLabel}</p>
                   </div>
-                  <div className="flex-1 flex flex-wrap gap-1.5">
+                  <div className="flex-1 flex flex-wrap gap-2">
                     {data.alerts.map((a, i) => {
                       const isGood = a.severity === "healthy";
                       return (
-                        <span key={i} className={`text-[11px] rounded-full px-2 py-1 ${isGood ? "bg-teal/10 text-teal" : "bg-clay/10 text-clay"}`}>
+                        <span key={i} className={`text-sm rounded-full px-3 py-1.5 ${isGood ? "bg-teal/10 text-teal" : "bg-clay/10 text-clay"}`}>
                           {isGood ? "🟢" : "🔴"} {a.text}
                         </span>
                       );
@@ -455,26 +472,36 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
                   </div>
                 )}
 
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="rounded-xl p-3 bg-teal text-white shadow-md">
-                    <p className="text-[11px] opacity-80">Revenue today</p>
-                    <p className="font-display text-xl font-semibold">{formatCurrency(data.revenue)}</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-2xl p-5 bg-teal text-white shadow-md">
+                    <p className="text-xs opacity-80">Revenue today</p>
+                    <p className="font-display text-2xl md:text-3xl font-semibold mt-1">{formatCurrency(data.revenue)}</p>
                   </div>
-                  <div className={`rounded-xl p-3 text-white shadow-md ${data.pendingDuesTotal > 0 ? "bg-clay" : "bg-teal"}`}>
-                    <p className="text-[11px] opacity-80">Pending dues</p>
-                    <p className="font-display text-xl font-semibold">{formatCurrency(data.pendingDuesTotal)}</p>
+                  <div className={`rounded-2xl p-5 text-white shadow-md ${data.pendingDuesTotal > 0 ? "bg-clay" : "bg-teal"}`}>
+                    <p className="text-xs opacity-80">Pending dues</p>
+                    <p className="font-display text-2xl md:text-3xl font-semibold mt-1">{formatCurrency(data.pendingDuesTotal)}</p>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <Tile label="Appointments today" value={String(data.totalAppts)} onClick={() => setActiveTile("appointments")} />
-                  <Tile label="Revenue, 7 days" value={formatCurrency(data.revenueTrend.reduce((s, d) => s + d.amount, 0))} onClick={() => setActiveTile("revenueTrend")} />
-                  <Tile label="Appts this week" value={String(data.weeklyAppointments.reduce((s, d) => s + d.count, 0))} onClick={() => setActiveTile("weeklyAppts")} />
+                  <Tile
+                    label="Revenue, 7 days"
+                    value={formatCurrency(data.revenueTrend.reduce((s, d) => s + d.amount, 0))}
+                    onClick={() => setActiveTile("revenueTrend")}
+                    sparkline={data.revenueTrend.map((d) => ({ x: d.day, y: d.amount }))}
+                  />
+                  <Tile
+                    label="Appts this week"
+                    value={String(data.weeklyAppointments.reduce((s, d) => s + d.count, 0))}
+                    onClick={() => setActiveTile("weeklyAppts")}
+                    sparkline={data.weeklyAppointments.map((d) => ({ x: d.day, y: d.count }))}
+                  />
                   <Tile label="Payment methods" value={`${data.paymentMethods.length} types`} onClick={() => setActiveTile("paymentMethods")} />
                   <Tile label="Business by doctor" value={`${data.byDoctor.length} doctors`} sub={data.byDoctor[0]?.name} onClick={() => setActiveTile("byDoctor")} />
                   <Tile label="Top treatments" value={data.topTreatmentsWeek[0]?.treatment ?? "-"} sub="tap for full list" onClick={() => setActiveTile("treatments")} />
-                  <Tile label="Patient localities" value={`${data.topLocalities.length} areas`} onClick={() => setActiveTile("localities")} />
-                  <Tile label="Low stock" value={String(data.lowStockItems.length)} alert={data.lowStockItems.length > 0} onClick={() => setActiveTile("lowStock")} />
+                  <Tile label="Patient localities" value={`${data.topLocalities.length} areas`} sub={data.topLocalities[0]?.locality} onClick={() => setActiveTile("localities")} />
+                  <Tile label="Low stock" value={String(data.lowStockCount)} alert={data.lowStockCount > 0} onClick={() => setActiveTile("lowStock")} />
                 </div>
               </div>
             )}
