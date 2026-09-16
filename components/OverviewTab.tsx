@@ -3,18 +3,32 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { formatCurrency } from "@/lib/format";
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+
+const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function TrendPill({ pct }: { pct: number | null }) {
+  if (pct === null) return null;
+  const up = pct >= 0;
+  return (
+    <span className={`inline-flex items-center gap-1 text-xs font-semibold rounded-full px-2 py-0.5 ${up ? "bg-teal/10 text-teal" : "bg-clay/10 text-clay"}`}>
+      {up ? "▲" : "▼"} {Math.abs(pct).toFixed(0)}%
+    </span>
+  );
+}
 
 export default function OverviewTab({ clinicId }: { clinicId: string }) {
   const [todayRevenue, setTodayRevenue] = useState<number | null>(null);
-  const [yesterdayRevenue, setYesterdayRevenue] = useState<number | null>(null);
   const [weekRevenue, setWeekRevenue] = useState<number | null>(null);
   const [monthRevenue, setMonthRevenue] = useState<number | null>(null);
   const [todayCount, setTodayCount] = useState<number | null>(null);
+  const [apptTrendPct, setApptTrendPct] = useState<number | null>(null);
   const [newNames, setNewNames] = useState<string[]>([]);
   const [returningNames, setReturningNames] = useState<string[]>([]);
   const [outstandingTotal, setOutstandingTotal] = useState<number | null>(null);
   const [lowStockCount, setLowStockCount] = useState<number | null>(null);
   const [labReferrals, setLabReferrals] = useState<number | null>(null);
+  const [revenueTrend, setRevenueTrend] = useState<{ day: string; amount: number }[]>([]);
   const [showPatientList, setShowPatientList] = useState(false);
 
   const loadStats = async () => {
@@ -29,39 +43,54 @@ export default function OverviewTab({ clinicId }: { clinicId: string }) {
 
     const [
       { data: todayPayments },
-      { data: yesterdayPayments },
       { data: weekPayments },
       { data: monthPayments },
       { count: apptCount },
+      { count: apptCountYesterday },
       { data: todaysAppts },
       { data: invoices },
       { data: items },
       { count: labCount },
+      { data: trendPayments },
     ] = await Promise.all([
       supabase.from("payments").select("amount").eq("clinic_id", clinicId).gte("paid_at", today),
-      supabase.from("payments").select("amount").eq("clinic_id", clinicId).gte("paid_at", yesterday).lt("paid_at", today),
       supabase.from("payments").select("amount").eq("clinic_id", clinicId).gte("paid_at", weekStartStr),
       supabase.from("payments").select("amount").eq("clinic_id", clinicId).gte("paid_at", monthStartStr),
       supabase.from("appointments").select("*", { count: "exact", head: true }).eq("clinic_id", clinicId).eq("appointment_date", today),
+      supabase.from("appointments").select("*", { count: "exact", head: true }).eq("clinic_id", clinicId).eq("appointment_date", yesterday),
       supabase.from("appointments").select("patient_id, patients(full_name)").eq("clinic_id", clinicId).eq("appointment_date", today),
       supabase.from("invoices").select("total_amount, payments(amount)").eq("clinic_id", clinicId).in("status", ["unpaid", "partial"]),
       supabase.from("inventory_items").select("id, reorder_level, inventory_batches(quantity)").eq("clinic_id", clinicId),
       supabase.from("appointments").select("*", { count: "exact", head: true }).eq("clinic_id", clinicId).eq("referred_to_lab", true),
+      supabase.from("payments").select("amount, paid_at").eq("clinic_id", clinicId).gte("paid_at", weekStartStr),
     ]);
 
     const sum = (rows: any[] | null) => (rows ?? []).reduce((s, p) => s + Number(p.amount), 0);
     setTodayRevenue(sum(todayPayments));
-    setYesterdayRevenue(sum(yesterdayPayments));
     setWeekRevenue(sum(weekPayments));
     setMonthRevenue(sum(monthPayments));
     setTodayCount(apptCount ?? 0);
     setLabReferrals(labCount ?? 0);
 
+    const y = apptCountYesterday ?? 0;
+    setApptTrendPct(y > 0 ? (((apptCount ?? 0) - y) / y) * 100 : null);
+
+    const byDay: Record<string, number> = {};
+    for (let i = 0; i < 7; i++) {
+      const d = new Date();
+      d.setDate(d.getDate() - (6 - i));
+      byDay[d.toISOString().slice(0, 10)] = 0;
+    }
+    (trendPayments ?? []).forEach((p: any) => {
+      const day = p.paid_at.slice(0, 10);
+      if (day in byDay) byDay[day] += Number(p.amount);
+    });
+    setRevenueTrend(Object.entries(byDay).map(([date, amount]) => ({ day: DAY_LABELS[new Date(date).getDay()], amount })));
+
     const uniqueToday = Array.from(
       new Map((todaysAppts ?? []).map((a: any) => [a.patient_id, a.patients?.full_name ?? "Unknown"])).entries()
     );
     const patientIds = uniqueToday.map(([id]) => id);
-
     if (patientIds.length > 0) {
       const { data: priorAppts } = await supabase
         .from("appointments")
@@ -105,118 +134,120 @@ export default function OverviewTab({ clinicId }: { clinicId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clinicId]);
 
-  let trendColor = "text-white";
-  let trendBg = "bg-white/20";
-  let trendLabel = "-";
-  if (todayRevenue !== null && yesterdayRevenue !== null && yesterdayRevenue > 0) {
-    const pctChange = ((todayRevenue - yesterdayRevenue) / yesterdayRevenue) * 100;
-    if (pctChange >= 0) {
-      trendLabel = `▲ ${pctChange.toFixed(0)}% vs yesterday`;
-    } else if (pctChange >= -25) {
-      trendLabel = `▼ ${Math.abs(pctChange).toFixed(0)}% vs yesterday`;
-    } else {
-      trendLabel = `▼ ${Math.abs(pctChange).toFixed(0)}% vs yesterday`;
-    }
-  }
-
   return (
     <div className="space-y-5">
-      {/* Bold gradient hero */}
-      <div className="rounded-2xl p-6 md:p-8 shadow-lg text-white bg-gradient-to-br from-teal via-teal to-[#134f4c]">
-        <p className="text-sm text-white/80 mb-1">Today's collection</p>
-        <div className="flex items-end gap-3 flex-wrap">
-          <p className="font-display text-4xl md:text-5xl font-semibold">
-            {todayRevenue === null ? "…" : formatCurrency(todayRevenue)}
-          </p>
-          <span className={`text-sm font-medium px-2.5 py-1 rounded-full ${trendBg} ${trendColor}`}>
-            {trendLabel}
-          </span>
-        </div>
-        <div className="flex gap-6 mt-4 text-sm text-white/80">
-          <span>This week: <strong className="text-white">{weekRevenue === null ? "…" : formatCurrency(weekRevenue)}</strong></span>
-          <span>This month: <strong className="text-white">{monthRevenue === null ? "…" : formatCurrency(monthRevenue)}</strong></span>
-        </div>
-      </div>
-
-      {/* Bold colorful stat blocks */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="rounded-2xl p-5 shadow-lg text-white bg-gradient-to-br from-violet to-[#4a3f99]">
-          <p className="text-sm text-white/80">Today's appointments</p>
-          <p className="font-display text-2xl font-semibold mt-1">
-            {todayCount === null ? "…" : todayCount}
-          </p>
+      {/* Stat cards row - white cards, pastel icon badges, trend pills */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="card p-5">
+          <span className="w-10 h-10 rounded-xl flex items-center justify-center text-lg bg-violet/10">📅</span>
+          <p className="text-sm text-ink/50 mt-3">Today's Appointments</p>
+          <div className="flex items-center gap-2 mt-1">
+            <p className="font-display text-2xl font-semibold text-ink">{todayCount === null ? "…" : todayCount}</p>
+            <TrendPill pct={apptTrendPct} />
+          </div>
+          <p className="text-xs text-ink/40 mt-1">From yesterday</p>
         </div>
 
         <button
           onClick={() => setShowPatientList(!showPatientList)}
-          className="rounded-2xl p-5 shadow-lg text-white text-left bg-gradient-to-br from-rose to-[#a13a58] hover:opacity-90 transition"
+          className="card p-5 text-left hover:shadow-lg transition"
         >
-          <p className="text-sm text-white/80">New / Returning today</p>
-          <p className="font-display text-2xl font-semibold mt-1">
-            {newNames.length + returningNames.length === 0 ? "…" : `${newNames.length} / ${returningNames.length}`}
-          </p>
-          <p className="text-xs text-white/70 mt-0.5 underline underline-offset-2">
-            {showPatientList ? "Hide names" : "View names"}
-          </p>
+          <span className="w-10 h-10 rounded-xl flex items-center justify-center text-lg bg-teal/10">🧑</span>
+          <p className="text-sm text-ink/50 mt-3">New Patients Today</p>
+          <p className="font-display text-2xl font-semibold text-ink mt-1">{newNames.length}</p>
+          <p className="text-xs text-ink/40 mt-1">{returningNames.length} returning · tap for names</p>
         </button>
 
-        <div
-          className={`rounded-2xl p-5 shadow-lg text-white bg-gradient-to-br ${
-            (outstandingTotal ?? 0) > 0 ? "from-clay to-[#8a3f2b]" : "from-sage to-[#3f5a50]"
-          }`}
-        >
-          <p className="text-sm text-white/80">Outstanding dues</p>
-          <p className="font-display text-2xl font-semibold mt-1">
-            {outstandingTotal === null ? "…" : formatCurrency(outstandingTotal)}
-          </p>
-        </div>
-
-        <div
-          className={`rounded-2xl p-5 shadow-lg text-white bg-gradient-to-br ${
-            (lowStockCount ?? 0) > 0 ? "from-amber-600 to-amber-800" : "from-sage to-[#3f5a50]"
-          }`}
-        >
-          <p className="text-sm text-white/80">Low stock items</p>
-          <p className="font-display text-2xl font-semibold mt-1">
+        <div className="card p-5">
+          <span className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg ${(lowStockCount ?? 0) > 0 ? "bg-clay/10" : "bg-teal/10"}`}>📦</span>
+          <p className="text-sm text-ink/50 mt-3">Low Stock Items</p>
+          <p className={`font-display text-2xl font-semibold mt-1 ${(lowStockCount ?? 0) > 0 ? "text-clay" : "text-ink"}`}>
             {lowStockCount === null ? "…" : lowStockCount}
           </p>
+          <p className="text-xs text-ink/40 mt-1">{(lowStockCount ?? 0) > 0 ? "Needs reordering" : "All stocked up"}</p>
         </div>
       </div>
 
       {showPatientList && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="rounded-2xl p-4 shadow-lg bg-violet/10 border border-violet/30">
-            <p className="text-sm font-medium text-violet mb-2">New today ({newNames.length})</p>
-            {newNames.length === 0 ? (
-              <p className="text-sm text-ink/40">None yet</p>
-            ) : (
-              <ul className="text-sm space-y-1">
-                {newNames.map((n, i) => (
-                  <li key={i} className="text-ink/80">{n}</li>
-                ))}
-              </ul>
+          <div className="card p-4 bg-teal/5 border border-teal/20">
+            <p className="text-sm font-medium text-teal mb-2">New today ({newNames.length})</p>
+            {newNames.length === 0 ? <p className="text-sm text-ink/40">None yet</p> : (
+              <ul className="text-sm space-y-1">{newNames.map((n, i) => <li key={i} className="text-ink/80">{n}</li>)}</ul>
             )}
           </div>
-          <div className="rounded-2xl p-4 shadow-lg bg-sage/10 border border-sage/30">
-            <p className="text-sm font-medium text-sage mb-2">Returning today ({returningNames.length})</p>
-            {returningNames.length === 0 ? (
-              <p className="text-sm text-ink/40">None yet</p>
-            ) : (
-              <ul className="text-sm space-y-1">
-                {returningNames.map((n, i) => (
-                  <li key={i} className="text-ink/80">{n}</li>
-                ))}
-              </ul>
+          <div className="card p-4 bg-violet/5 border border-violet/20">
+            <p className="text-sm font-medium text-violet mb-2">Returning today ({returningNames.length})</p>
+            {returningNames.length === 0 ? <p className="text-sm text-ink/40">None yet</p> : (
+              <ul className="text-sm space-y-1">{returningNames.map((n, i) => <li key={i} className="text-ink/80">{n}</li>)}</ul>
             )}
           </div>
         </div>
       )}
 
-      <div className="rounded-2xl p-5 shadow-lg text-white bg-gradient-to-br from-rose to-[#a13a58] inline-flex items-center gap-3 w-auto">
-        <span className="text-sm text-white/80">Referred to lab (all time)</span>
-        <span className="font-display text-xl font-semibold">
-          {labReferrals === null ? "…" : labReferrals}
-        </span>
+      {/* Main chart panel + side cards */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="card p-5 lg:col-span-2">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <span className="w-9 h-9 rounded-xl flex items-center justify-center text-base bg-teal/10">📊</span>
+              <p className="font-display text-lg font-semibold">Revenue Overview</p>
+            </div>
+            <span className="text-xs text-ink/50 bg-sand rounded-full px-3 py-1.5">Last 7 days</span>
+          </div>
+
+          <div className="flex gap-8 mb-4">
+            <div>
+              <p className="text-xs text-ink/50">This week</p>
+              <p className="font-display text-xl font-semibold text-ink">{weekRevenue === null ? "…" : formatCurrency(weekRevenue)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-ink/50">This month</p>
+              <p className="font-display text-xl font-semibold text-ink">{monthRevenue === null ? "…" : formatCurrency(monthRevenue)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-ink/50">Today</p>
+              <p className="font-display text-xl font-semibold text-teal">{todayRevenue === null ? "…" : formatCurrency(todayRevenue)}</p>
+            </div>
+          </div>
+
+          <div style={{ width: "100%", height: 200 }}>
+            <ResponsiveContainer>
+              <AreaChart data={revenueTrend}>
+                <defs>
+                  <linearGradient id="revFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#1D7874" stopOpacity={0.25} />
+                    <stop offset="100%" stopColor="#1D7874" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <XAxis dataKey="day" tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
+                <YAxis hide />
+                <Tooltip formatter={(v: number) => formatCurrency(v)} />
+                <Area type="monotone" dataKey="amount" stroke="#1D7874" strokeWidth={2.5} fill="url(#revFill)" dot={{ r: 3 }} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          {/* Light card */}
+          <div className="card p-5">
+            <span className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg ${(outstandingTotal ?? 0) > 0 ? "bg-clay/10" : "bg-teal/10"}`}>⏳</span>
+            <p className="text-sm text-ink/50 mt-3">Pending Dues</p>
+            <p className={`font-display text-2xl font-semibold mt-1 ${(outstandingTotal ?? 0) > 0 ? "text-clay" : "text-ink"}`}>
+              {outstandingTotal === null ? "…" : formatCurrency(outstandingTotal)}
+            </p>
+            <p className="text-xs text-ink/40 mt-1">Across all patients</p>
+          </div>
+
+          {/* Dark contrast card */}
+          <div className="rounded-2xl p-5 bg-ink text-white shadow-md">
+            <span className="w-10 h-10 rounded-xl flex items-center justify-center text-lg bg-white/10">🧪</span>
+            <p className="text-sm text-white/60 mt-3">Referred to Lab</p>
+            <p className="font-display text-2xl font-semibold mt-1">{labReferrals === null ? "…" : labReferrals}</p>
+            <p className="text-xs text-white/50 mt-1">All time</p>
+          </div>
+        </div>
       </div>
     </div>
   );
