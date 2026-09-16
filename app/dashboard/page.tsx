@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import type { Clinic } from "@/lib/types";
+import type { Clinic, TabKey } from "@/lib/types";
 import OverviewTab from "@/components/OverviewTab";
 import PatientsTab from "@/components/PatientsTab";
 import AppointmentsTab from "@/components/AppointmentsTab";
@@ -11,16 +11,15 @@ import BillingTab from "@/components/BillingTab";
 import InventoryTab from "@/components/InventoryTab";
 import OwnerQuickView from "@/components/OwnerQuickView";
 import NoteForOwner from "@/components/NoteForOwner";
+import Sidebar from "@/components/Sidebar";
 
-type TabKey = "overview" | "patients" | "appointments" | "billing" | "inventory";
-
-const TABS: { key: TabKey; label: string }[] = [
-  { key: "overview", label: "Overview" },
-  { key: "patients", label: "Patients" },
-  { key: "appointments", label: "Appointments" },
-  { key: "billing", label: "Billing" },
-  { key: "inventory", label: "Inventory" },
-];
+const TAB_TITLES: Record<TabKey, { title: string; subtitle: string }> = {
+  overview: { title: "Welcome back", subtitle: "Here's how {clinic} is doing today." },
+  appointments: { title: "Appointments", subtitle: "Book, reschedule and track every visit." },
+  patients: { title: "Patients", subtitle: "Search records, visit history and revenue." },
+  billing: { title: "Billing", subtitle: "Invoices, payments and outstanding dues." },
+  inventory: { title: "Inventory", subtitle: "Stock levels, batches and expiry tracking." },
+};
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -28,6 +27,7 @@ export default function DashboardPage() {
   const [clinic, setClinic] = useState<Clinic | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
   const [subBlocked, setSubBlocked] = useState<string | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const checkSubscription = async (clinicId: string) => {
     const { data: sub } = await supabase
@@ -163,49 +163,77 @@ export default function DashboardPage() {
     );
   }
 
+  const ownerFirstName = clinic.owner_name?.trim().split(/\s+/)[0] ?? null;
+  const heading = TAB_TITLES[activeTab];
+  const greeting =
+    activeTab === "overview"
+      ? `Welcome back${ownerFirstName ? `, ${ownerFirstName}` : ""}`
+      : heading.title;
+  const subtitle = heading.subtitle.replace("{clinic}", clinic.name);
+
   return (
-    <main className="min-h-screen">
-      <header className="border-b border-line bg-white">
-        <div className="max-w-5xl mx-auto px-5 py-4 flex items-center justify-between">
-          <div>
-            <p className="font-display text-lg font-semibold">
-              {clinic.name}
-            </p>
-            <p className="text-xs text-ink/50">{clinic.clinic_type}</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <NoteForOwner clinicId={clinic.id} />
-            <button className="btn-ghost text-sm" onClick={handleLogout}>
-              Log out
-            </button>
-          </div>
-        </div>
-      </header>
+    <div className="min-h-screen flex bg-sand">
+      <Sidebar
+        activeTab={activeTab}
+        onSelect={(key) => {
+          setActiveTab(key);
+          setSidebarOpen(false);
+        }}
+        open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        clinicName={clinic.name}
+        clinicType={clinic.clinic_type}
+      />
 
-      <div className="max-w-5xl mx-auto px-5 py-6">
-        <nav className="flex gap-1 mb-6 flex-wrap">
-          {TABS.map((t) => (
-            <button
-              key={t.key}
-              className={`tab ${activeTab === t.key ? "tab-active" : "hover:bg-white"}`}
-              onClick={() => setActiveTab(t.key)}
-            >
-              {t.label}
-            </button>
-          ))}
-        </nav>
+      <div className="flex-1 min-w-0">
+        <header className="sticky top-0 z-30 bg-sand/90 backdrop-blur border-b border-line">
+          <div className="px-4 sm:px-8 py-4 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <button
+                className="lg:hidden w-9 h-9 rounded-lg border border-line bg-white flex items-center justify-center text-lg shrink-0"
+                onClick={() => setSidebarOpen(true)}
+                aria-label="Open menu"
+              >
+                ☰
+              </button>
+              <div className="min-w-0">
+                <p className="font-display text-xl sm:text-2xl font-semibold text-ink truncate">
+                  {greeting}
+                </p>
+                <p className="text-sm text-ink/50 mt-0.5 truncate">{subtitle}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <NoteForOwner clinicId={clinic.id} />
+              <button className="btn-ghost text-sm hidden sm:inline-flex" onClick={handleLogout}>
+                Log out
+              </button>
+              <div
+                className="w-9 h-9 rounded-full bg-teal/15 text-teal font-display font-semibold text-sm flex items-center justify-center shrink-0"
+                title={clinic.owner_name ?? clinic.name}
+              >
+                {(clinic.owner_name || clinic.name).trim().slice(0, 1).toUpperCase()}
+              </div>
+              <button className="btn-ghost text-sm sm:hidden" onClick={handleLogout}>
+                Log out
+              </button>
+            </div>
+          </div>
+        </header>
 
-        {activeTab === "overview" && <OverviewTab clinicId={clinic.id} />}
-        {activeTab === "patients" && <PatientsTab clinicId={clinic.id} clinicName={clinic.name} />}
-        {activeTab === "appointments" && (
-          <AppointmentsTab clinicId={clinic.id} />
-        )}
-        {activeTab === "billing" && <BillingTab clinicId={clinic.id} />}
-        {activeTab === "inventory" && <InventoryTab clinicId={clinic.id} />}
+        <main className="px-4 sm:px-8 py-6 max-w-6xl">
+          {activeTab === "overview" && <OverviewTab clinicId={clinic.id} />}
+          {activeTab === "patients" && <PatientsTab clinicId={clinic.id} clinicName={clinic.name} />}
+          {activeTab === "appointments" && (
+            <AppointmentsTab clinicId={clinic.id} />
+          )}
+          {activeTab === "billing" && <BillingTab clinicId={clinic.id} />}
+          {activeTab === "inventory" && <InventoryTab clinicId={clinic.id} />}
+        </main>
       </div>
 
       {/* Floating owner quick-view — visible on every tab */}
       <OwnerQuickView clinicId={clinic.id} />
-    </main>
+    </div>
   );
 }

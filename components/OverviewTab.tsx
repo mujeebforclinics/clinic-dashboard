@@ -7,6 +7,19 @@ import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "rec
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+const STATUS_STYLE: Record<string, string> = {
+  scheduled: "bg-violet/10 text-violet",
+  completed: "bg-teal/10 text-teal",
+  cancelled: "bg-clay/10 text-clay",
+  no_show: "bg-rose/10 text-rose",
+};
+const STATUS_LABEL: Record<string, string> = {
+  scheduled: "Scheduled",
+  completed: "Completed",
+  cancelled: "Cancelled",
+  no_show: "No-show",
+};
+
 function TrendPill({ pct }: { pct: number | null }) {
   if (pct === null) return null;
   const up = pct >= 0;
@@ -14,6 +27,24 @@ function TrendPill({ pct }: { pct: number | null }) {
     <span className={`inline-flex items-center gap-1 text-xs font-semibold rounded-full px-2 py-0.5 ${up ? "bg-teal/10 text-teal" : "bg-clay/10 text-clay"}`}>
       {up ? "▲" : "▼"} {Math.abs(pct).toFixed(0)}%
     </span>
+  );
+}
+
+function StatusPill({ status }: { status: string }) {
+  return (
+    <span className={`inline-block text-xs font-semibold rounded-full px-2.5 py-1 ${STATUS_STYLE[status] ?? "bg-sand text-ink/60"}`}>
+      {STATUS_LABEL[status] ?? status}
+    </span>
+  );
+}
+
+function ChartTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="bg-white rounded-xl shadow-lg border border-line px-3 py-2">
+      <p className="text-[11px] text-ink/40 mb-0.5">{label}</p>
+      <p className="text-sm font-semibold text-ink">{formatCurrency(payload[0].value)}</p>
+    </div>
   );
 }
 
@@ -30,6 +61,8 @@ export default function OverviewTab({ clinicId }: { clinicId: string }) {
   const [labReferrals, setLabReferrals] = useState<number | null>(null);
   const [revenueTrend, setRevenueTrend] = useState<{ day: string; amount: number }[]>([]);
   const [showPatientList, setShowPatientList] = useState(false);
+  const [recentAppts, setRecentAppts] = useState<any[]>([]);
+  const [apptSearch, setApptSearch] = useState("");
 
   const loadStats = async () => {
     const today = new Date().toISOString().slice(0, 10);
@@ -52,6 +85,7 @@ export default function OverviewTab({ clinicId }: { clinicId: string }) {
       { data: items },
       { count: labCount },
       { data: trendPayments },
+      { data: recent },
     ] = await Promise.all([
       supabase.from("payments").select("amount").eq("clinic_id", clinicId).gte("paid_at", today),
       supabase.from("payments").select("amount").eq("clinic_id", clinicId).gte("paid_at", weekStartStr),
@@ -63,7 +97,16 @@ export default function OverviewTab({ clinicId }: { clinicId: string }) {
       supabase.from("inventory_items").select("id, reorder_level, inventory_batches(quantity)").eq("clinic_id", clinicId),
       supabase.from("appointments").select("*", { count: "exact", head: true }).eq("clinic_id", clinicId).eq("referred_to_lab", true),
       supabase.from("payments").select("amount, paid_at").eq("clinic_id", clinicId).gte("paid_at", weekStartStr),
+      supabase
+        .from("appointments")
+        .select("id, appointment_date, appointment_time, status, patients(full_name), doctors(name)")
+        .eq("clinic_id", clinicId)
+        .order("appointment_date", { ascending: false })
+        .order("appointment_time", { ascending: false })
+        .limit(8),
     ]);
+
+    setRecentAppts(recent ?? []);
 
     const sum = (rows: any[] | null) => (rows ?? []).reduce((s, p) => s + Number(p.amount), 0);
     setTodayRevenue(sum(todayPayments));
@@ -137,7 +180,7 @@ export default function OverviewTab({ clinicId }: { clinicId: string }) {
   return (
     <div className="space-y-5">
       {/* Stat cards row - white cards, pastel icon badges, trend pills */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="card p-5">
           <span className="w-10 h-10 rounded-xl flex items-center justify-center text-lg bg-violet/10">📅</span>
           <p className="text-sm text-ink/50 mt-3">Today's Appointments</p>
@@ -157,6 +200,30 @@ export default function OverviewTab({ clinicId }: { clinicId: string }) {
           <p className="font-display text-2xl font-semibold text-ink mt-1">{newNames.length}</p>
           <p className="text-xs text-ink/40 mt-1">{returningNames.length} returning · tap for names</p>
         </button>
+
+        <div className="card p-5">
+          <span className="w-10 h-10 rounded-xl flex items-center justify-center text-lg bg-rose/10">💰</span>
+          <p className="text-sm text-ink/50 mt-3">This Month</p>
+          <p className="font-display text-2xl font-semibold text-ink mt-1">
+            {monthRevenue === null ? "…" : formatCurrency(monthRevenue)}
+          </p>
+          <div className="flex items-end gap-1 h-6 mt-2">
+            {revenueTrend.length === 0
+              ? Array.from({ length: 7 }).map((_, i) => (
+                  <div key={i} className="flex-1 bg-rose/10 rounded-sm h-1.5" />
+                ))
+              : revenueTrend.map((d, i) => {
+                  const max = Math.max(1, ...revenueTrend.map((r) => r.amount));
+                  return (
+                    <div
+                      key={i}
+                      className="flex-1 bg-rose/25 rounded-sm"
+                      style={{ height: `${Math.max(10, (d.amount / max) * 100)}%` }}
+                    />
+                  );
+                })}
+          </div>
+        </div>
 
         <div className="card p-5">
           <span className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg ${(lowStockCount ?? 0) > 0 ? "bg-clay/10" : "bg-teal/10"}`}>📦</span>
@@ -222,7 +289,7 @@ export default function OverviewTab({ clinicId }: { clinicId: string }) {
                 </defs>
                 <XAxis dataKey="day" tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
                 <YAxis hide />
-                <Tooltip formatter={(v: number) => formatCurrency(v)} />
+                <Tooltip content={<ChartTooltip />} />
                 <Area type="monotone" dataKey="amount" stroke="#1D7874" strokeWidth={2.5} fill="url(#revFill)" dot={{ r: 3 }} />
               </AreaChart>
             </ResponsiveContainer>
@@ -247,6 +314,66 @@ export default function OverviewTab({ clinicId }: { clinicId: string }) {
             <p className="font-display text-2xl font-semibold mt-1">{labReferrals === null ? "…" : labReferrals}</p>
             <p className="text-xs text-white/50 mt-1">All time</p>
           </div>
+        </div>
+      </div>
+
+      {/* Recent appointments table */}
+      <div className="card p-5">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+          <div className="flex items-center gap-2">
+            <span className="w-9 h-9 rounded-xl flex items-center justify-center text-base bg-violet/10">🗓️</span>
+            <div>
+              <p className="font-display text-lg font-semibold">Recent Appointments</p>
+              <p className="text-xs text-ink/40">Keep track of the latest bookings</p>
+            </div>
+          </div>
+          <input
+            className="input sm:w-56"
+            placeholder="Search patient…"
+            value={apptSearch}
+            onChange={(e) => setApptSearch(e.target.value)}
+          />
+        </div>
+
+        <div className="overflow-x-auto -mx-5">
+          <table className="w-full text-sm min-w-[560px]">
+            <thead>
+              <tr className="text-left text-xs text-ink/40 uppercase tracking-wide border-b border-line">
+                <th className="px-5 py-2 font-medium">Date</th>
+                <th className="px-5 py-2 font-medium">Patient</th>
+                <th className="px-5 py-2 font-medium">Doctor</th>
+                <th className="px-5 py-2 font-medium">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {recentAppts
+                .filter((a) =>
+                  (a.patients?.full_name ?? "").toLowerCase().includes(apptSearch.trim().toLowerCase())
+                )
+                .map((a) => (
+                  <tr key={a.id} className="border-b border-line last:border-0 hover:bg-sand/60 transition">
+                    <td className="px-5 py-3 text-ink/70 whitespace-nowrap">
+                      {new Date(a.appointment_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}
+                      {a.appointment_time ? `, ${a.appointment_time.slice(0, 5)}` : ""}
+                    </td>
+                    <td className="px-5 py-3 font-medium text-ink whitespace-nowrap">
+                      {a.patients?.full_name ?? "—"}
+                    </td>
+                    <td className="px-5 py-3 text-ink/70 whitespace-nowrap">{a.doctors?.name ?? "Unassigned"}</td>
+                    <td className="px-5 py-3">
+                      <StatusPill status={a.status} />
+                    </td>
+                  </tr>
+                ))}
+              {recentAppts.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="px-5 py-8 text-center text-ink/40">
+                    No appointments yet
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
