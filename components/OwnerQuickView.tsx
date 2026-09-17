@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { formatCurrency } from "@/lib/format";
 import Modal from "@/components/Modal";
@@ -79,6 +79,17 @@ const ALERT_STYLE: Record<string, { bg: string; text: string; label: string }> =
   monitor: { bg: "bg-violet/10 border border-violet/30", text: "text-violet", label: "Monitor" },
   healthy: { bg: "bg-teal/10 border border-teal/30", text: "text-teal", label: "" },
 };
+
+// Adds days to a "YYYY-MM-DD" string using UTC arithmetic on the Y/M/D
+// numbers directly, so it never shifts a day because of the local
+// timezone's offset from UTC (new Date(str).toISOString() does shift for
+// any timezone ahead of UTC, e.g. India).
+function addDaysToDateStr(dateStr: string, days: number): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + days);
+  return dt.toISOString().slice(0, 10);
+}
 
 function relativeDay(dateStr: string): string {
   const today = new Date().toISOString().slice(0, 10);
@@ -252,6 +263,12 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
   const [detail, setDetail] = useState<Detail>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailExtra, setDetailExtra] = useState<any>(null);
+  // Bumped on every goToDetail call so a slow, superseded fetch can never
+  // overwrite state for whatever the person has since tapped - fixes a race
+  // where a fast tap (e.g. a status slice) could resolve before a slower
+  // earlier tap (e.g. a calendar day), leaving detailExtra in a shape that
+  // didn't match the currently-open popup.
+  const detailRequestId = useRef(0);
 
   const load = async () => {
     const today = new Date().toISOString().slice(0, 10);
@@ -264,6 +281,16 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
     const ninetyDaysAgo = new Date();
     ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
     const ninetyDaysAgoStr = ninetyDaysAgo.toISOString().slice(0, 10);
+
+    // "This week" for the appointments bar chart = the current Sun-Sat
+    // calendar week, bounded on BOTH ends. Previously this only had a lower
+    // bound, so future-dated appointments (e.g. booked for next week) were
+    // pulled into the list but fell outside the chart's day buckets and
+    // silently rendered as empty bars.
+    const now = new Date();
+    const weekStartDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay());
+    const weekStartStr = `${weekStartDate.getFullYear()}-${String(weekStartDate.getMonth() + 1).padStart(2, "0")}-${String(weekStartDate.getDate()).padStart(2, "0")}`;
+    const weekEndStr = addDaysToDateStr(weekStartStr, 6);
 
     const [
       { data: appts },
@@ -297,7 +324,8 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
         .from("appointments")
         .select("id, appointment_date, appointment_time, status, patients(full_name), doctors(name)")
         .eq("clinic_id", clinicId)
-        .gte("appointment_date", sevenDaysAgoStr)
+        .gte("appointment_date", weekStartStr)
+        .lte("appointment_date", weekEndStr)
         .order("appointment_date", { ascending: false })
         .order("appointment_time", { ascending: false }),
       supabase.from("staff_notes").select("id, message, urgency, created_at").eq("clinic_id", clinicId).eq("is_read", false).order("created_at", { ascending: false }),
@@ -375,22 +403,22 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
       if (day in revenueByDay) revenueByDay[day] += Number(p.amount);
     });
     const revenueTrend = Object.entries(revenueByDay).map(([date, amount]) => ({
-      day: DAY_LABELS[new Date(date).getDay()],
+      day: DAY_LABELS[new Date(date + "T00:00:00").getDay()],
       date,
       amount,
     }));
 
     const apptsByDay: Record<string, number> = {};
     for (let i = 0; i < 7; i++) {
-      const d = new Date();
-      d.setDate(d.getDate() - (6 - i));
-      apptsByDay[d.toISOString().slice(0, 10)] = 0;
+      apptsByDay[addDaysToDateStr(weekStartStr, i)] = 0;
     }
     (weekAppts ?? []).forEach((a: any) => {
       if (a.appointment_date in apptsByDay) apptsByDay[a.appointment_date]++;
     });
+    // Keys were inserted Sun->Sat in order, so this already reads left to
+    // right correctly - no re-sorting needed.
     const weeklyAppointments = Object.entries(apptsByDay).map(([date, count]) => ({
-      day: DAY_LABELS[new Date(date).getDay()],
+      day: DAY_LABELS[new Date(date + "T00:00:00").getDay()],
       date,
       count,
     }));
@@ -435,7 +463,7 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
         name: m.name,
         total: m.value,
         series: Object.entries(methodDayTotals[m.name] ?? {}).map(([date, amount]) => ({
-          day: DAY_LABELS[new Date(date).getDay()],
+          day: DAY_LABELS[new Date(date + "T00:00:00").getDay()],
           amount,
         })),
       }));
@@ -564,57 +592,67 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
     : [];
 
   const goToDetail = async (d: Detail) => {
+    const myRequestId = ++detailRequestId.current;
     setActiveTile(null);
     setDetail(d);
     setDetailExtra(null);
     if (!d) return;
 
-    if (d.kind === "locality") {
-      setDetailLoading(true);
-      const { data: rows } = await supabase
-        .from("patients")
-        .select("full_name, phone")
-        .eq("clinic_id", clinicId)
-        .eq("locality", d.locality)
-        .limit(30);
-      setDetailExtra(rows ?? []);
-      setDetailLoading(false);
-    } else if (d.kind === "day") {
-      // Live-fetch so a tap on the calendar works for ANY date, not just the
-      // last 7 days cached on the hub's charts.
-      setDetailLoading(true);
-      const nextDate = (() => {
-        const dt = new Date(d.date + "T00:00:00");
-        dt.setDate(dt.getDate() + 1);
-        return dt.toISOString().slice(0, 10);
-      })();
-      const [{ data: dayPayments }, { data: dayAppts }] = await Promise.all([
-        supabase.from("payments").select("amount").eq("clinic_id", clinicId).gte("paid_at", d.date).lt("paid_at", nextDate),
-        supabase
-          .from("appointments")
-          .select("id, appointment_time, status, patients(full_name), doctors(name)")
+    try {
+      if (d.kind === "locality") {
+        setDetailLoading(true);
+        const { data: rows } = await supabase
+          .from("patients")
+          .select("full_name, phone")
           .eq("clinic_id", clinicId)
-          .eq("appointment_date", d.date)
-          .order("appointment_time", { ascending: true }),
-      ]);
-      const revenue = (dayPayments ?? []).reduce((s: number, p: any) => s + Number(p.amount), 0);
-      setDetailExtra({ revenue, appts: dayAppts ?? [] });
-      setDetailLoading(false);
-    } else if (d.kind === "status") {
-      setDetailLoading(true);
-      const statusMap: Record<string, string> = {
-        Scheduled: "scheduled", Completed: "completed", Cancelled: "cancelled", "No-show": "no_show",
-      };
-      const today = new Date().toISOString().slice(0, 10);
-      const { data: rows } = await supabase
-        .from("appointments")
-        .select("appointment_time, patients(full_name)")
-        .eq("clinic_id", clinicId)
-        .eq("appointment_date", today)
-        .eq("status", statusMap[d.status])
-        .limit(30);
-      setDetailExtra(rows ?? []);
-      setDetailLoading(false);
+          .eq("locality", d.locality)
+          .limit(30);
+        if (myRequestId !== detailRequestId.current) return;
+        setDetailExtra(rows ?? []);
+      } else if (d.kind === "day") {
+        // Live-fetch so a tap on the calendar works for ANY date, not just the
+        // last 7 days cached on the hub's charts. Built from the Y/M/D numbers
+        // (not Date + toISOString) so it never shifts a day due to timezone
+        // conversion to UTC.
+        setDetailLoading(true);
+        const nextDate = addDaysToDateStr(d.date, 1);
+        const [{ data: dayPayments }, { data: dayAppts }] = await Promise.all([
+          supabase.from("payments").select("amount").eq("clinic_id", clinicId).gte("paid_at", d.date).lt("paid_at", nextDate),
+          supabase
+            .from("appointments")
+            .select("id, appointment_time, status, patients(full_name), doctors(name)")
+            .eq("clinic_id", clinicId)
+            .eq("appointment_date", d.date)
+            .order("appointment_time", { ascending: true }),
+        ]);
+        if (myRequestId !== detailRequestId.current) return;
+        const revenue = (dayPayments ?? []).reduce((s: number, p: any) => s + Number(p.amount), 0);
+        setDetailExtra({ revenue, appts: dayAppts ?? [] });
+      } else if (d.kind === "status") {
+        setDetailLoading(true);
+        const statusMap: Record<string, string> = {
+          Scheduled: "scheduled", Completed: "completed", Cancelled: "cancelled", "No-show": "no_show",
+        };
+        const today = new Date().toISOString().slice(0, 10);
+        const { data: rows } = await supabase
+          .from("appointments")
+          .select("appointment_time, patients(full_name)")
+          .eq("clinic_id", clinicId)
+          .eq("appointment_date", today)
+          .eq("status", statusMap[d.status])
+          .limit(30);
+        if (myRequestId !== detailRequestId.current) return;
+        setDetailExtra(rows ?? []);
+      }
+    } catch (err) {
+      // Never let a flaky network call or unexpected data shape crash the
+      // whole dashboard - just show an empty state for this popup instead.
+      console.error("goToDetail failed:", err);
+      if (myRequestId === detailRequestId.current) {
+        setDetailExtra(d.kind === "day" ? { revenue: 0, appts: [] } : []);
+      }
+    } finally {
+      if (myRequestId === detailRequestId.current) setDetailLoading(false);
     }
   };
 
@@ -1272,15 +1310,17 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
         {detailLoading ? (
           <p className="text-sm text-ink/60"><Spinner size={14} className="mr-1.5" />Loading…</p>
         ) : (
-          <ul className="space-y-1.5">
-            {(detailExtra ?? []).map((p: any, i: number) => (
-              <li key={i} className="text-sm bg-sand rounded-lg px-3 py-2 flex justify-between">
-                <span>{p.full_name}</span>
-                <span className="text-ink/50">{p.phone}</span>
-              </li>
-            ))}
-            {(detailExtra ?? []).length === 0 && <p className="text-sm text-ink/40">No patients found</p>}
-          </ul>
+          detail?.kind === "locality" && (
+            <ul className="space-y-1.5">
+              {(Array.isArray(detailExtra) ? detailExtra : []).map((p: any, i: number) => (
+                <li key={i} className="text-sm bg-sand rounded-lg px-3 py-2 flex justify-between">
+                  <span>{p.full_name}</span>
+                  <span className="text-ink/50">{p.phone}</span>
+                </li>
+              ))}
+              {(!Array.isArray(detailExtra) || detailExtra.length === 0) && <p className="text-sm text-ink/40">No patients found</p>}
+            </ul>
+          )
         )}
       </Modal>
 
@@ -1292,15 +1332,17 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
         {detailLoading ? (
           <p className="text-sm text-ink/60"><Spinner size={14} className="mr-1.5" />Loading…</p>
         ) : (
-          <ul className="space-y-1.5">
-            {(detailExtra ?? []).map((a: any, i: number) => (
-              <li key={i} className="text-sm bg-sand rounded-lg px-3 py-2 flex justify-between">
-                <span>{a.patients?.full_name ?? "Unknown"}</span>
-                <span className="text-ink/50">{a.appointment_time?.slice(0, 5) ?? ""}</span>
-              </li>
-            ))}
-            {(detailExtra ?? []).length === 0 && <p className="text-sm text-ink/40">None</p>}
-          </ul>
+          detail?.kind === "status" && (
+            <ul className="space-y-1.5">
+              {(Array.isArray(detailExtra) ? detailExtra : []).map((a: any, i: number) => (
+                <li key={i} className="text-sm bg-sand rounded-lg px-3 py-2 flex justify-between">
+                  <span>{a.patients?.full_name ?? "Unknown"}</span>
+                  <span className="text-ink/50">{a.appointment_time?.slice(0, 5) ?? ""}</span>
+                </li>
+              ))}
+              {(!Array.isArray(detailExtra) || detailExtra.length === 0) && <p className="text-sm text-ink/40">None</p>}
+            </ul>
+          )
         )}
       </Modal>
     </>
