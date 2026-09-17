@@ -144,8 +144,8 @@ export default function InventoryTab({ clinicId }: { clinicId: string }) {
   };
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-4">
+    <div className="lg:h-full flex flex-col">
+      <div className="flex items-center justify-between mb-4 shrink-0">
         <h2 className="font-display text-xl font-semibold">Inventory</h2>
         <button
           className="btn-primary"
@@ -158,7 +158,7 @@ export default function InventoryTab({ clinicId }: { clinicId: string }) {
       {showItemForm && (
         <form
           onSubmit={handleAddItem}
-          className="card p-5 mb-5 grid grid-cols-2 gap-3"
+          className="card p-5 mb-5 grid grid-cols-2 gap-3 shrink-0"
         >
           <input
             className="input col-span-2"
@@ -196,7 +196,7 @@ export default function InventoryTab({ clinicId }: { clinicId: string }) {
         </form>
       )}
 
-      <div className="card divide-y divide-line">
+      <div className="card divide-y divide-line lg:flex-1 lg:min-h-0 overflow-y-auto">
         {items.length === 0 && (
           <p className="p-5 text-sm text-ink/60">
             No inventory items yet. Add your first one above.

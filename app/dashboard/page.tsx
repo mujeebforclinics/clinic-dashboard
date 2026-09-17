@@ -172,7 +172,7 @@ export default function DashboardPage() {
   const subtitle = heading.subtitle.replace("{clinic}", clinic.name);
 
   return (
-    <div className="min-h-screen flex bg-sand">
+    <div className="h-screen flex bg-sand overflow-hidden">
       <Sidebar
         activeTab={activeTab}
         onSelect={(key) => {
@@ -185,8 +185,8 @@ export default function DashboardPage() {
         clinicType={clinic.clinic_type}
       />
 
-      <div className="flex-1 min-w-0">
-        <header className="sticky top-0 z-30 bg-sand/90 backdrop-blur border-b border-line">
+      <div className="flex-1 min-w-0 h-screen flex flex-col">
+        <header className="shrink-0 bg-sand/90 backdrop-blur border-b border-line">
           <div className="px-4 sm:px-8 py-4 flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
               <button
@@ -221,14 +221,16 @@ export default function DashboardPage() {
           </div>
         </header>
 
-        <main className="px-4 sm:px-8 py-6 max-w-6xl">
-          {activeTab === "overview" && <OverviewTab clinicId={clinic.id} />}
-          {activeTab === "patients" && <PatientsTab clinicId={clinic.id} clinicName={clinic.name} />}
-          {activeTab === "appointments" && (
-            <AppointmentsTab clinicId={clinic.id} />
-          )}
-          {activeTab === "billing" && <BillingTab clinicId={clinic.id} />}
-          {activeTab === "inventory" && <InventoryTab clinicId={clinic.id} />}
+        <main className="flex-1 min-h-0 px-4 sm:px-8 py-5 max-w-6xl w-full overflow-y-auto">
+          <div className="lg:h-full">
+            {activeTab === "overview" && <OverviewTab clinicId={clinic.id} />}
+            {activeTab === "patients" && <PatientsTab clinicId={clinic.id} clinicName={clinic.name} />}
+            {activeTab === "appointments" && (
+              <AppointmentsTab clinicId={clinic.id} />
+            )}
+            {activeTab === "billing" && <BillingTab clinicId={clinic.id} />}
+            {activeTab === "inventory" && <InventoryTab clinicId={clinic.id} />}
+          </div>
         </main>
       </div>
 

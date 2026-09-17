@@ -173,8 +173,8 @@ export default function AppointmentsTab({ clinicId }: { clinicId: string }) {
   };
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+    <div className="lg:h-full flex flex-col">
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2 shrink-0">
         <h2 className="font-display text-xl font-semibold">Appointments</h2>
         <div className="flex gap-2">
           <button className="btn-ghost" onClick={() => setShowDoctorForm(!showDoctorForm)}>
@@ -187,9 +187,9 @@ export default function AppointmentsTab({ clinicId }: { clinicId: string }) {
       </div>
 
       {showDoctorForm && (
-        <div className="card p-5 mb-5">
+        <div className="card p-5 mb-5 shrink-0">
           <p className="font-medium text-sm mb-3">Doctors at this clinic</p>
-          <div className="space-y-1 mb-4">
+          <div className="space-y-1 mb-4 max-h-40 overflow-y-auto">
             {doctors.length === 0 && (
               <p className="text-sm text-ink/60">No doctors added yet.</p>
             )}
@@ -231,7 +231,7 @@ export default function AppointmentsTab({ clinicId }: { clinicId: string }) {
       )}
 
       {showForm && (
-        <form onSubmit={handleAdd} className="card p-5 mb-5 grid grid-cols-2 gap-3">
+        <form onSubmit={handleAdd} className="card p-5 mb-5 grid grid-cols-2 gap-3 shrink-0">
           <select
             className="input col-span-2"
             value={patientId}
@@ -303,7 +303,7 @@ export default function AppointmentsTab({ clinicId }: { clinicId: string }) {
         </form>
       )}
 
-      <div className="card divide-y divide-line">
+      <div className="card divide-y divide-line lg:flex-1 lg:min-h-0 overflow-y-auto">
         {appointments.length === 0 && (
           <p className="p-5 text-sm text-ink/60">
             No appointments yet. Book your first one above.

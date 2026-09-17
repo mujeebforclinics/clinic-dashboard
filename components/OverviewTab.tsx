@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { formatCurrency } from "@/lib/format";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import Modal from "@/components/Modal";
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -63,6 +64,7 @@ export default function OverviewTab({ clinicId }: { clinicId: string }) {
   const [showPatientList, setShowPatientList] = useState(false);
   const [recentAppts, setRecentAppts] = useState<any[]>([]);
   const [apptSearch, setApptSearch] = useState("");
+  const [apptModalOpen, setApptModalOpen] = useState(false);
 
   const loadStats = async () => {
     const today = new Date().toISOString().slice(0, 10);
@@ -177,10 +179,14 @@ export default function OverviewTab({ clinicId }: { clinicId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clinicId]);
 
+  const filteredAppts = recentAppts.filter((a) =>
+    (a.patients?.full_name ?? "").toLowerCase().includes(apptSearch.trim().toLowerCase())
+  );
+
   return (
-    <div className="space-y-5">
+    <div className="lg:h-full flex flex-col gap-4">
       {/* Stat cards row - white cards, pastel icon badges, trend pills */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 shrink-0">
         <div className="card p-5">
           <span className="w-10 h-10 rounded-xl flex items-center justify-center text-lg bg-violet/10">📅</span>
           <p className="text-sm text-ink/50 mt-3">Today's Appointments</p>
@@ -235,27 +241,10 @@ export default function OverviewTab({ clinicId }: { clinicId: string }) {
         </div>
       </div>
 
-      {showPatientList && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="card p-4 bg-teal/5 border border-teal/20">
-            <p className="text-sm font-medium text-teal mb-2">New today ({newNames.length})</p>
-            {newNames.length === 0 ? <p className="text-sm text-ink/40">None yet</p> : (
-              <ul className="text-sm space-y-1">{newNames.map((n, i) => <li key={i} className="text-ink/80">{n}</li>)}</ul>
-            )}
-          </div>
-          <div className="card p-4 bg-violet/5 border border-violet/20">
-            <p className="text-sm font-medium text-violet mb-2">Returning today ({returningNames.length})</p>
-            {returningNames.length === 0 ? <p className="text-sm text-ink/40">None yet</p> : (
-              <ul className="text-sm space-y-1">{returningNames.map((n, i) => <li key={i} className="text-ink/80">{n}</li>)}</ul>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Main chart panel + side cards */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="card p-5 lg:col-span-2">
-          <div className="flex items-center justify-between mb-4">
+      {/* Main chart panel + side cards — fills the remaining height, no page scroll */}
+      <div className="lg:flex-1 lg:min-h-0 grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="card p-5 lg:col-span-2 flex flex-col lg:min-h-0">
+          <div className="flex items-center justify-between mb-3 shrink-0">
             <div className="flex items-center gap-2">
               <span className="w-9 h-9 rounded-xl flex items-center justify-center text-base bg-teal/10">📊</span>
               <p className="font-display text-lg font-semibold">Revenue Overview</p>
@@ -263,7 +252,7 @@ export default function OverviewTab({ clinicId }: { clinicId: string }) {
             <span className="text-xs text-ink/50 bg-sand rounded-full px-3 py-1.5">Last 7 days</span>
           </div>
 
-          <div className="flex gap-8 mb-4">
+          <div className="flex gap-8 mb-3 shrink-0">
             <div>
               <p className="text-xs text-ink/50">This week</p>
               <p className="font-display text-xl font-semibold text-ink">{weekRevenue === null ? "…" : formatCurrency(weekRevenue)}</p>
@@ -278,8 +267,8 @@ export default function OverviewTab({ clinicId }: { clinicId: string }) {
             </div>
           </div>
 
-          <div style={{ width: "100%", height: 200 }}>
-            <ResponsiveContainer>
+          <div className="h-[220px] lg:h-auto lg:flex-1 lg:min-h-0">
+            <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={revenueTrend}>
                 <defs>
                   <linearGradient id="revFill" x1="0" y1="0" x2="0" y2="1">
@@ -296,9 +285,9 @@ export default function OverviewTab({ clinicId }: { clinicId: string }) {
           </div>
         </div>
 
-        <div className="space-y-4">
+        <div className="flex flex-col gap-4 lg:min-h-0">
           {/* Light card */}
-          <div className="card p-5">
+          <div className="card p-5 shrink-0">
             <span className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg ${(outstandingTotal ?? 0) > 0 ? "bg-clay/10" : "bg-teal/10"}`}>⏳</span>
             <p className="text-sm text-ink/50 mt-3">Pending Dues</p>
             <p className={`font-display text-2xl font-semibold mt-1 ${(outstandingTotal ?? 0) > 0 ? "text-clay" : "text-ink"}`}>
@@ -308,35 +297,56 @@ export default function OverviewTab({ clinicId }: { clinicId: string }) {
           </div>
 
           {/* Dark contrast card */}
-          <div className="rounded-2xl p-5 bg-ink text-white shadow-md">
+          <div className="rounded-2xl p-5 bg-ink text-white shadow-md shrink-0">
             <span className="w-10 h-10 rounded-xl flex items-center justify-center text-lg bg-white/10">🧪</span>
             <p className="text-sm text-white/60 mt-3">Referred to Lab</p>
             <p className="font-display text-2xl font-semibold mt-1">{labReferrals === null ? "…" : labReferrals}</p>
             <p className="text-xs text-white/50 mt-1">All time</p>
           </div>
+
+          {/* Recent appointments — opens as a popup instead of pushing the page down */}
+          <button
+            onClick={() => setApptModalOpen(true)}
+            className="card p-5 text-left hover:shadow-lg transition lg:flex-1 lg:min-h-0 flex flex-col justify-between"
+          >
+            <div>
+              <span className="w-10 h-10 rounded-xl flex items-center justify-center text-lg bg-violet/10">🗓️</span>
+              <p className="text-sm text-ink/50 mt-3">Recent Appointments</p>
+              <p className="font-display text-2xl font-semibold text-ink mt-1">{recentAppts.length}</p>
+            </div>
+            <p className="text-xs text-violet mt-2">Tap to view &amp; search →</p>
+          </button>
         </div>
       </div>
 
-      {/* Recent appointments table */}
-      <div className="card p-5">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-          <div className="flex items-center gap-2">
-            <span className="w-9 h-9 rounded-xl flex items-center justify-center text-base bg-violet/10">🗓️</span>
-            <div>
-              <p className="font-display text-lg font-semibold">Recent Appointments</p>
-              <p className="text-xs text-ink/40">Keep track of the latest bookings</p>
-            </div>
+      {/* Popup: new vs returning patient names */}
+      <Modal open={showPatientList} onClose={() => setShowPatientList(false)} title="Patients seen today">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <p className="text-sm font-medium text-teal mb-2">New today ({newNames.length})</p>
+            {newNames.length === 0 ? <p className="text-sm text-ink/40">None yet</p> : (
+              <ul className="text-sm space-y-1">{newNames.map((n, i) => <li key={i} className="text-ink/80">{n}</li>)}</ul>
+            )}
           </div>
-          <input
-            className="input sm:w-56"
-            placeholder="Search patient…"
-            value={apptSearch}
-            onChange={(e) => setApptSearch(e.target.value)}
-          />
+          <div>
+            <p className="text-sm font-medium text-violet mb-2">Returning today ({returningNames.length})</p>
+            {returningNames.length === 0 ? <p className="text-sm text-ink/40">None yet</p> : (
+              <ul className="text-sm space-y-1">{returningNames.map((n, i) => <li key={i} className="text-ink/80">{n}</li>)}</ul>
+            )}
+          </div>
         </div>
+      </Modal>
 
+      {/* Popup: full recent appointments table with search */}
+      <Modal open={apptModalOpen} onClose={() => setApptModalOpen(false)} title="Recent Appointments">
+        <input
+          className="input mb-3"
+          placeholder="Search patient…"
+          value={apptSearch}
+          onChange={(e) => setApptSearch(e.target.value)}
+        />
         <div className="overflow-x-auto -mx-5">
-          <table className="w-full text-sm min-w-[560px]">
+          <table className="w-full text-sm min-w-[480px]">
             <thead>
               <tr className="text-left text-xs text-ink/40 uppercase tracking-wide border-b border-line">
                 <th className="px-5 py-2 font-medium">Date</th>
@@ -346,36 +356,32 @@ export default function OverviewTab({ clinicId }: { clinicId: string }) {
               </tr>
             </thead>
             <tbody>
-              {recentAppts
-                .filter((a) =>
-                  (a.patients?.full_name ?? "").toLowerCase().includes(apptSearch.trim().toLowerCase())
-                )
-                .map((a) => (
-                  <tr key={a.id} className="border-b border-line last:border-0 hover:bg-sand/60 transition">
-                    <td className="px-5 py-3 text-ink/70 whitespace-nowrap">
-                      {new Date(a.appointment_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}
-                      {a.appointment_time ? `, ${a.appointment_time.slice(0, 5)}` : ""}
-                    </td>
-                    <td className="px-5 py-3 font-medium text-ink whitespace-nowrap">
-                      {a.patients?.full_name ?? "—"}
-                    </td>
-                    <td className="px-5 py-3 text-ink/70 whitespace-nowrap">{a.doctors?.name ?? "Unassigned"}</td>
-                    <td className="px-5 py-3">
-                      <StatusPill status={a.status} />
-                    </td>
-                  </tr>
-                ))}
-              {recentAppts.length === 0 && (
+              {filteredAppts.map((a) => (
+                <tr key={a.id} className="border-b border-line last:border-0 hover:bg-sand/60 transition">
+                  <td className="px-5 py-3 text-ink/70 whitespace-nowrap">
+                    {new Date(a.appointment_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}
+                    {a.appointment_time ? `, ${a.appointment_time.slice(0, 5)}` : ""}
+                  </td>
+                  <td className="px-5 py-3 font-medium text-ink whitespace-nowrap">
+                    {a.patients?.full_name ?? "—"}
+                  </td>
+                  <td className="px-5 py-3 text-ink/70 whitespace-nowrap">{a.doctors?.name ?? "Unassigned"}</td>
+                  <td className="px-5 py-3">
+                    <StatusPill status={a.status} />
+                  </td>
+                </tr>
+              ))}
+              {filteredAppts.length === 0 && (
                 <tr>
                   <td colSpan={4} className="px-5 py-8 text-center text-ink/40">
-                    No appointments yet
+                    No appointments found
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
-      </div>
+      </Modal>
     </div>
   );
 }

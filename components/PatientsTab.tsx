@@ -147,15 +147,15 @@ export default function PatientsTab({
   );
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+    <div className="lg:h-full flex flex-col">
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2 shrink-0">
         <h2 className="font-display text-xl font-semibold">Patients</h2>
         <button className="btn-primary" onClick={() => setShowForm(!showForm)}>
           {showForm ? "Cancel" : "+ Add patient"}
         </button>
       </div>
 
-      <div className="mb-4">
+      <div className="mb-4 shrink-0">
         <input
           className="input"
           placeholder="Search by name, phone, or patient ID..."
@@ -165,7 +165,7 @@ export default function PatientsTab({
       </div>
 
       {showForm && (
-        <form onSubmit={handleAdd} className="card p-5 mb-5 grid grid-cols-2 gap-3">
+        <form onSubmit={handleAdd} className="card p-5 mb-5 grid grid-cols-2 gap-3 shrink-0">
           <input className="input col-span-2" placeholder="Full name" value={name} onChange={(e) => setName(e.target.value)} required />
           <input className="input" placeholder="Phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
           <input className="input" placeholder="Age" type="number" value={age} onChange={(e) => setAge(e.target.value)} />
@@ -183,7 +183,7 @@ export default function PatientsTab({
         </form>
       )}
 
-      <div className="card divide-y divide-line">
+      <div className="card divide-y divide-line lg:flex-1 lg:min-h-0 overflow-y-auto">
         {searching && <p className="p-5 text-sm text-ink/60"><Spinner size={14} className="mr-1.5" />Searching…</p>}
         {!searching && patients.length === 0 && (
           <p className="p-5 text-sm text-ink/60">No patients found.</p>
