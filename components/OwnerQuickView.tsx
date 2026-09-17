@@ -69,6 +69,15 @@ const ACTIVITY_LABEL: Record<string, string> = {
   no_show: "No-show",
 };
 
+// Distinct visual treatment per alert severity so "Critical" never looks
+// the same as "Attention" — this is the fix for "i dont know whtas critical here".
+const ALERT_STYLE: Record<string, { bg: string; text: string; label: string }> = {
+  critical: { bg: "bg-clay/15 border border-clay/40", text: "text-clay", label: "Critical" },
+  attention: { bg: "bg-amber-100 border border-amber-300", text: "text-amber-700", label: "Attention" },
+  monitor: { bg: "bg-violet/10 border border-violet/30", text: "text-violet", label: "Monitor" },
+  healthy: { bg: "bg-teal/10 border border-teal/30", text: "text-teal", label: "" },
+};
+
 function relativeDay(dateStr: string): string {
   const today = new Date().toISOString().slice(0, 10);
   const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
@@ -77,35 +86,67 @@ function relativeDay(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
 }
 
-// A small, data-free month calendar with today highlighted — a decorative
-// "luxury" touch that needs no query.
-function MiniCalendar() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth();
-  const firstDow = new Date(year, month, 1).getDay();
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
+// A tappable month calendar — tap any date to pop up that day's revenue and
+// appointments. Prev/next arrows let owners check earlier or later months too.
+export function MiniCalendar({ onSelectDate }: { onSelectDate: (date: string) => void }) {
+  const today = new Date();
+  const [viewYear, setViewYear] = useState(today.getFullYear());
+  const [viewMonth, setViewMonth] = useState(today.getMonth());
+  const firstDow = new Date(viewYear, viewMonth, 1).getDay();
+  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
   const cells: (number | null)[] = [...Array(firstDow).fill(null), ...Array.from({ length: daysInMonth }, (_, i) => i + 1)];
+  const isCurrentMonth = viewYear === today.getFullYear() && viewMonth === today.getMonth();
+
+  const goPrev = () => {
+    if (viewMonth === 0) {
+      setViewMonth(11);
+      setViewYear((y) => y - 1);
+    } else setViewMonth((m) => m - 1);
+  };
+  const goNext = () => {
+    if (viewMonth === 11) {
+      setViewMonth(0);
+      setViewYear((y) => y + 1);
+    } else setViewMonth((m) => m + 1);
+  };
+
   return (
-    <div className="card p-4">
-      <p className="font-display text-sm font-semibold text-ink mb-3">
-        {MONTH_LABELS[month]} {year}
-      </p>
-      <div className="grid grid-cols-7 gap-y-1 text-center">
+    <div className="card p-3">
+      <div className="flex items-center justify-between mb-1.5">
+        <button onClick={goPrev} aria-label="Previous month" className="w-5 h-5 rounded-full text-ink/40 hover:bg-sand flex items-center justify-center text-xs">
+          ‹
+        </button>
+        <p className="font-display text-sm font-semibold text-ink">
+          {MONTH_LABELS[viewMonth]} {viewYear}
+        </p>
+        <button onClick={goNext} aria-label="Next month" className="w-5 h-5 rounded-full text-ink/40 hover:bg-sand flex items-center justify-center text-xs">
+          ›
+        </button>
+      </div>
+      <div className="grid grid-cols-7 gap-y-0.5 text-center">
         {["S", "M", "T", "W", "T", "F", "S"].map((d, i) => (
           <span key={i} className="text-[10px] text-ink/35 font-medium">{d}</span>
         ))}
-        {cells.map((day, i) => (
-          <span
-            key={i}
-            className={`text-[11px] rounded-full w-6 h-6 mx-auto flex items-center justify-center ${
-              day === now.getDate() ? "bg-teal text-white font-semibold" : day ? "text-ink/60" : ""
-            }`}
-          >
-            {day ?? ""}
-          </span>
-        ))}
+        {cells.map((day, i) => {
+          const isToday = isCurrentMonth && day === today.getDate();
+          const dateStr = day
+            ? `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`
+            : null;
+          return (
+            <button
+              key={i}
+              disabled={!day}
+              onClick={() => dateStr && onSelectDate(dateStr)}
+              className={`text-[11px] rounded-full w-5 h-5 mx-auto flex items-center justify-center transition ${
+                isToday ? "bg-teal text-white font-semibold" : day ? "text-ink/60 hover:bg-teal/10" : ""
+              }`}
+            >
+              {day ?? ""}
+            </button>
+          );
+        })}
       </div>
+      <p className="text-[10px] text-ink/35 mt-1 text-center">Tap a date for that day's numbers</p>
     </div>
   );
 }
@@ -127,7 +168,8 @@ type TileKey =
   | "byDoctor"
   | "treatments"
   | "localities"
-  | "lowStock";
+  | "lowStock"
+  | "recentActivity";
 
 type Detail =
   | { kind: "doctor"; id: string }
@@ -145,7 +187,7 @@ const ACCENTS = [
   { bg: "bg-amber-100", text: "text-amber-700", stroke: "#D97706" },
 ];
 
-function Tile({
+export function Tile({
   icon,
   label,
   value,
@@ -170,10 +212,10 @@ function Tile({
   return (
     <button
       onClick={onClick}
-      className={`card p-4 text-left hover:shadow-lg transition flex flex-col justify-between min-h-[140px] ${wide ? "col-span-2" : ""}`}
+      className={`card p-3.5 text-left hover:shadow-lg transition flex flex-col justify-between min-h-[108px] ${wide ? "col-span-2" : ""}`}
     >
       <div className="flex items-start justify-between">
-        <span className={`w-10 h-10 rounded-full flex items-center justify-center text-lg ${accent.bg}`}>
+        <span className={`w-8 h-8 rounded-full flex items-center justify-center text-base ${accent.bg}`}>
           {icon}
         </span>
         {alert && (
@@ -182,13 +224,13 @@ function Tile({
           </span>
         )}
       </div>
-      <div className="mt-3">
+      <div className="mt-2">
         <p className="text-xs text-ink/50">{label}</p>
-        <p className="font-display text-2xl md:text-3xl font-semibold text-ink leading-tight mt-0.5">{value}</p>
+        <p className="font-display text-lg md:text-xl font-semibold text-ink leading-tight mt-0.5 truncate">{value}</p>
         {sub && <p className={`text-xs mt-1 truncate ${accent.text}`}>{sub}</p>}
       </div>
       {sparkline && sparkline.length > 1 && (
-        <div style={{ width: "100%", height: 32 }} className="mt-2">
+        <div style={{ width: "100%", height: 22 }} className="mt-1.5">
           <ResponsiveContainer>
             <AreaChart data={sparkline}>
               <Area type="monotone" dataKey="y" stroke={accent.stroke} strokeWidth={2} fill={accent.stroke} fillOpacity={0.12} />
@@ -218,6 +260,9 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().slice(0, 10);
+    const ninetyDaysAgo = new Date();
+    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+    const ninetyDaysAgoStr = ninetyDaysAgo.toISOString().slice(0, 10);
 
     const [
       { data: appts },
@@ -249,7 +294,7 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
       supabase.from("doctors").select("id, name, specialty").eq("clinic_id", clinicId),
       supabase.from("invoices").select("doctor_id, total_amount, payments(amount)").eq("clinic_id", clinicId).limit(3000),
       supabase.from("appointments").select("doctor_id, lab_name, doctors(name)").eq("clinic_id", clinicId).eq("referred_to_lab", true).not("lab_name", "is", null),
-      supabase.from("payments").select("amount, paid_at, invoices!inner(treatment)").eq("clinic_id", clinicId).gte("paid_at", sevenDaysAgoStr).not("invoices.treatment", "is", null),
+      supabase.from("payments").select("amount, paid_at, invoices!inner(treatment)").eq("clinic_id", clinicId).gte("paid_at", ninetyDaysAgoStr).not("invoices.treatment", "is", null),
       supabase
         .from("appointments")
         .select("id, appointment_date, appointment_time, status, patients(full_name), doctors(name)")
@@ -499,6 +544,27 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
         .limit(30);
       setDetailExtra(rows ?? []);
       setDetailLoading(false);
+    } else if (d.kind === "day") {
+      // Live-fetch so a tap on the calendar works for ANY date, not just the
+      // last 7 days cached on the hub's charts.
+      setDetailLoading(true);
+      const nextDate = (() => {
+        const dt = new Date(d.date + "T00:00:00");
+        dt.setDate(dt.getDate() + 1);
+        return dt.toISOString().slice(0, 10);
+      })();
+      const [{ data: dayPayments }, { data: dayAppts }] = await Promise.all([
+        supabase.from("payments").select("amount").eq("clinic_id", clinicId).gte("paid_at", d.date).lt("paid_at", nextDate),
+        supabase
+          .from("appointments")
+          .select("id, appointment_time, status, patients(full_name), doctors(name)")
+          .eq("clinic_id", clinicId)
+          .eq("appointment_date", d.date)
+          .order("appointment_time", { ascending: true }),
+      ]);
+      const revenue = (dayPayments ?? []).reduce((s: number, p: any) => s + Number(p.amount), 0);
+      setDetailExtra({ revenue, appts: dayAppts ?? [] });
+      setDetailLoading(false);
     } else if (d.kind === "status") {
       setDetailLoading(true);
       const statusMap: Record<string, string> = {
@@ -543,11 +609,11 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
 
       {open && (
         <div className="fixed inset-0 z-50 bg-sand overflow-y-auto">
-          <div className="p-4 sm:p-6 max-w-6xl mx-auto min-h-full">
-            <div className="flex items-start justify-between mb-5">
+          <div className="p-3 sm:p-5 max-w-6xl mx-auto min-h-full">
+            <div className="flex items-start justify-between mb-3">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wider text-teal">Owner Snapshot</p>
-                <h2 className="font-display text-2xl font-semibold text-ink mt-0.5">
+                <h2 className="font-display text-xl font-semibold text-ink mt-0.5">
                   {new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}
                 </h2>
               </div>
@@ -563,11 +629,11 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
             {!data ? (
               <p className="text-sm text-ink/60"><Spinner size={14} className="mr-1.5" />Loading…</p>
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-2.5">
                 {/* Health score + alerts, and a calendar for a touch of polish */}
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                  <div className="card p-5 lg:col-span-2 flex items-center gap-5">
-                    <svg width="76" height="76" viewBox="0 0 100 100" className="shrink-0">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                  <div className="card p-3.5 lg:col-span-2 flex items-center gap-4">
+                    <svg width="62" height="62" viewBox="0 0 100 100" className="shrink-0">
                       <circle cx="50" cy="50" r="42" stroke="#E4DED2" strokeWidth="9" fill="none" />
                       <circle
                         cx="50" cy="50" r="42"
@@ -580,13 +646,14 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
                       <text x="50" y="56" textAnchor="middle" fontSize="26" fontWeight="700" fill="#1C2321">{data.healthScore}</text>
                     </svg>
                     <div className="min-w-0">
-                      <p className="font-display text-lg font-semibold text-ink">{data.healthLabel}</p>
-                      <p className="text-xs text-ink/40 mb-2">Clinic health score</p>
+                      <p className="font-display text-base font-semibold text-ink">{data.healthLabel}</p>
+                      <p className="text-xs text-ink/40 mb-1.5">Clinic health score</p>
                       <div className="flex flex-wrap gap-1.5">
                         {data.alerts.slice(0, 3).map((a, i) => {
-                          const isGood = a.severity === "healthy";
+                          const style = ALERT_STYLE[a.severity] ?? ALERT_STYLE.monitor;
                           return (
-                            <span key={i} className={`text-xs rounded-full px-2.5 py-1 ${isGood ? "bg-teal/10 text-teal" : "bg-clay/10 text-clay"}`}>
+                            <span key={i} className={`text-xs rounded-full px-2.5 py-1 ${style.bg} ${style.text}`}>
+                              {style.label && <span className="font-semibold">{style.label}: </span>}
                               {a.text}
                             </span>
                           );
@@ -594,7 +661,7 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
                       </div>
                     </div>
                   </div>
-                  <MiniCalendar />
+                  <MiniCalendar onSelectDate={(date) => goToDetail({ kind: "day", date })} />
                 </div>
 
                 {notes.length > 0 && (
@@ -615,235 +682,107 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
                 )}
 
                 {/* Headline pastel stat cards */}
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                  <div className="rounded-2xl p-5 bg-violet/10">
-                    <span className="w-10 h-10 rounded-xl bg-white/70 flex items-center justify-center text-lg">💰</span>
-                    <p className="text-xs text-ink/50 mt-3">Revenue today</p>
-                    <p className="font-display text-2xl font-semibold text-ink mt-0.5">{formatCurrency(data.revenue)}</p>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div className="rounded-2xl p-3.5 bg-violet/10">
+                    <span className="w-8 h-8 rounded-xl bg-white/70 flex items-center justify-center text-base">💰</span>
+                    <p className="text-xs text-ink/50 mt-2">Revenue today</p>
+                    <p className="font-display text-xl font-semibold text-ink mt-0.5">{formatCurrency(data.revenue)}</p>
                   </div>
-                  <button onClick={() => setActiveTile("appointments")} className="rounded-2xl p-5 bg-rose/10 text-left hover:shadow-lg transition">
-                    <span className="w-10 h-10 rounded-xl bg-white/70 flex items-center justify-center text-lg">📅</span>
-                    <p className="text-xs text-ink/50 mt-3">Appointments today</p>
-                    <p className="font-display text-2xl font-semibold text-ink mt-0.5">{data.totalAppts}</p>
+                  <button onClick={() => setActiveTile("appointments")} className="rounded-2xl p-3.5 bg-rose/10 text-left hover:shadow-lg transition">
+                    <span className="w-8 h-8 rounded-xl bg-white/70 flex items-center justify-center text-base">📅</span>
+                    <p className="text-xs text-ink/50 mt-2">Appointments today</p>
+                    <p className="font-display text-xl font-semibold text-ink mt-0.5">{data.totalAppts}</p>
                   </button>
-                  <div className={`rounded-2xl p-5 ${data.pendingDuesTotal > 0 ? "bg-amber-100" : "bg-teal/10"}`}>
-                    <span className="w-10 h-10 rounded-xl bg-white/70 flex items-center justify-center text-lg">⏳</span>
-                    <p className="text-xs text-ink/50 mt-3">Pending dues</p>
-                    <p className={`font-display text-2xl font-semibold mt-0.5 ${data.pendingDuesTotal > 0 ? "text-clay" : "text-ink"}`}>
+                  <div className={`rounded-2xl p-3.5 ${data.pendingDuesTotal > 0 ? "bg-amber-100" : "bg-teal/10"}`}>
+                    <span className="w-8 h-8 rounded-xl bg-white/70 flex items-center justify-center text-base">⏳</span>
+                    <p className="text-xs text-ink/50 mt-2">Pending dues</p>
+                    <p className={`font-display text-xl font-semibold mt-0.5 ${data.pendingDuesTotal > 0 ? "text-clay" : "text-ink"}`}>
                       {formatCurrency(data.pendingDuesTotal)}
                     </p>
                   </div>
                   <button
                     onClick={() => setActiveTile("lowStock")}
-                    className={`rounded-2xl p-5 text-left hover:shadow-lg transition ${data.lowStockCount > 0 ? "bg-clay/10" : "bg-teal/10"}`}
+                    className={`rounded-2xl p-3.5 text-left hover:shadow-lg transition ${data.lowStockCount > 0 ? "bg-clay/10" : "bg-teal/10"}`}
                   >
-                    <span className="w-10 h-10 rounded-xl bg-white/70 flex items-center justify-center text-lg">📦</span>
-                    <p className="text-xs text-ink/50 mt-3">Low stock items</p>
-                    <p className={`font-display text-2xl font-semibold mt-0.5 ${data.lowStockCount > 0 ? "text-clay" : "text-ink"}`}>
+                    <span className="w-8 h-8 rounded-xl bg-white/70 flex items-center justify-center text-base">📦</span>
+                    <p className="text-xs text-ink/50 mt-2">Low stock items</p>
+                    <p className={`font-display text-xl font-semibold mt-0.5 ${data.lowStockCount > 0 ? "text-clay" : "text-ink"}`}>
                       {data.lowStockCount}
                     </p>
                   </button>
                 </div>
 
-                {/* Revenue trend + revenue by doctor donut */}
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                  <div className="card p-5 lg:col-span-2">
-                    <div className="flex items-center justify-between mb-1">
-                      <div>
-                        <p className="font-display text-lg font-semibold">Revenue Trend</p>
-                        <p className="text-xs text-ink/40">Last 7 days · tap a point for details</p>
-                      </div>
-                      <p className="font-display text-xl font-semibold text-teal">
-                        {formatCurrency(data.revenueTrend.reduce((s, d) => s + d.amount, 0))}
-                      </p>
-                    </div>
-                    <div style={{ width: "100%", height: 200 }} className="mt-2">
-                      <ResponsiveContainer>
-                        <AreaChart
-                          data={data.revenueTrend}
-                          onClick={(e: any) => {
-                            const point = e?.activePayload?.[0]?.payload;
-                            if (point) goToDetail({ kind: "day", date: point.date });
-                          }}
-                        >
-                          <defs>
-                            <linearGradient id="ownerRevFill" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="0%" stopColor="#1D7874" stopOpacity={0.25} />
-                              <stop offset="100%" stopColor="#1D7874" stopOpacity={0} />
-                            </linearGradient>
-                          </defs>
-                          <XAxis dataKey="day" tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
-                          <YAxis hide />
-                          <Tooltip formatter={(v: number) => formatCurrency(v)} />
-                          <Area type="monotone" dataKey="amount" stroke="#1D7874" strokeWidth={2.5} fill="url(#ownerRevFill)" dot={{ r: 4, cursor: "pointer" }} />
-                        </AreaChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-
-                  <div className="card p-5">
-                    <p className="font-display text-lg font-semibold">Revenue by Doctor</p>
-                    <p className="text-xs text-ink/40 mb-2">Tap a slice for details</p>
-                    {data.byDoctor.every((d) => d.revenue === 0) ? (
-                      <p className="text-sm text-ink/40 py-10 text-center">No revenue recorded yet</p>
-                    ) : (
-                      <>
-                        <div style={{ width: "100%", height: 150 }} className="relative">
-                          <ResponsiveContainer>
-                            <PieChart>
-                              <Pie
-                                data={data.byDoctor.filter((d) => d.revenue > 0)}
-                                dataKey="revenue" nameKey="name" innerRadius={45} outerRadius={68} paddingAngle={2}
-                                onClick={(entry: any) => goToDetail({ kind: "doctor", id: entry.id })}
-                                cursor="pointer"
-                              >
-                                {data.byDoctor.filter((d) => d.revenue > 0).map((d, i) => (
-                                  <Cell key={d.id} fill={DOCTOR_COLORS[i % DOCTOR_COLORS.length]} />
-                                ))}
-                              </Pie>
-                              <Tooltip formatter={(v: number) => formatCurrency(v)} />
-                            </PieChart>
-                          </ResponsiveContainer>
-                          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                            <p className="text-[10px] text-ink/40">Top earner</p>
-                            <p className="text-xs font-semibold text-ink truncate max-w-[90px] text-center">
-                              {data.byDoctor[0]?.name ?? "—"}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="space-y-1 mt-1 max-h-24 overflow-y-auto">
-                          {data.byDoctor.filter((d) => d.revenue > 0).slice(0, 4).map((d, i) => (
-                            <button
-                              key={d.id}
-                              onClick={() => goToDetail({ kind: "doctor", id: d.id })}
-                              className="w-full flex items-center gap-2 text-xs"
-                            >
-                              <span className="w-2 h-2 rounded-full shrink-0" style={{ background: DOCTOR_COLORS[i % DOCTOR_COLORS.length] }} />
-                              <span className="truncate flex-1 text-left text-ink/70">{d.name}</span>
-                              <span className="font-medium text-ink shrink-0">{formatCurrency(d.revenue)}</span>
-                            </button>
-                          ))}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                {/* Weekly appointments + payment method cards */}
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                  <div className="card p-5 lg:col-span-2">
-                    <div className="flex items-center justify-between mb-1">
-                      <div>
-                        <p className="font-display text-lg font-semibold">Appointments This Week</p>
-                        <p className="text-xs text-ink/40">Tap a bar for that day's numbers</p>
-                      </div>
-                      <p className="font-display text-xl font-semibold text-ink">
-                        {data.weeklyAppointments.reduce((s, d) => s + d.count, 0)}
-                      </p>
-                    </div>
-                    <div style={{ width: "100%", height: 180 }} className="mt-2">
-                      <ResponsiveContainer>
-                        <BarChart data={data.weeklyAppointments}>
-                          <XAxis dataKey="day" tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
-                          <YAxis hide />
-                          <Tooltip />
-                          <Bar dataKey="count" radius={[6, 6, 0, 0]} cursor="pointer" onClick={(entry: any) => goToDetail({ kind: "day", date: entry.date })}>
-                            {data.weeklyAppointments.map((entry, i) => (
-                              <Cell key={entry.date} fill={i === data.weeklyAppointments.length - 1 ? TEAL_SHADES[1] : "#C9DEDC"} />
-                            ))}
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-
-                  <div className="space-y-4">
-                    {data.paymentMethodTrends.slice(0, 2).map((m, i) => {
-                      const totalAll = data.paymentMethodTrends.reduce((s, x) => s + x.total, 0);
-                      const pct = totalAll > 0 ? (m.total / totalAll) * 100 : 0;
-                      const color = i === 0 ? "#1D7874" : "#D6537A";
-                      return (
-                        <button
-                          key={m.name}
-                          onClick={() => goToDetail({ kind: "method", name: m.name })}
-                          className="card p-4 w-full text-left hover:shadow-lg transition"
-                        >
-                          <div className="flex items-center justify-between">
-                            <p className="text-xs text-ink/50">{m.name}</p>
-                            <p className="text-xs font-semibold" style={{ color }}>{pct.toFixed(0)}%</p>
-                          </div>
-                          <p className="font-display text-lg font-semibold text-ink mt-0.5">{formatCurrency(m.total)}</p>
-                          <div style={{ width: "100%", height: 28 }} className="mt-1">
-                            <ResponsiveContainer>
-                              <AreaChart data={m.series}>
-                                <Area type="monotone" dataKey="amount" stroke={color} strokeWidth={2} fill={color} fillOpacity={0.12} />
-                              </AreaChart>
-                            </ResponsiveContainer>
-                          </div>
-                        </button>
-                      );
-                    })}
-                    {data.paymentMethodTrends.length === 0 && (
-                      <div className="card p-4">
-                        <p className="text-sm text-ink/40 text-center py-4">No payments yet</p>
-                      </div>
-                    )}
-                    {data.paymentMethods.length > 2 && (
-                      <button onClick={() => setActiveTile("paymentMethods")} className="text-xs text-teal font-medium hover:underline px-1">
-                        View all payment methods →
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Recent activity */}
-                <div className="card p-5">
-                  <p className="font-display text-lg font-semibold mb-2">Recent Activity</p>
-                  {data.recentActivity.length === 0 ? (
-                    <p className="text-sm text-ink/40 py-4 text-center">No appointments yet</p>
-                  ) : (
-                    <div>
-                      {data.recentActivity.map((a) => (
-                        <div key={a.id} className="flex items-center gap-3 py-2.5 border-b border-line last:border-0">
-                          <span className="w-8 h-8 rounded-full bg-teal/10 text-teal font-display font-semibold text-xs flex items-center justify-center shrink-0">
-                            {a.patient.trim().slice(0, 1).toUpperCase()}
-                          </span>
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm font-medium text-ink truncate">{a.patient}</p>
-                            <p className="text-xs text-ink/40 truncate">
-                              {a.doctor} · {relativeDay(a.date)}{a.time ? `, ${a.time.slice(0, 5)}` : ""}
-                            </p>
-                          </div>
-                          <span className={`text-xs font-semibold rounded-full px-2.5 py-1 shrink-0 ${ACTIVITY_STYLE[a.status] ?? "bg-sand text-ink/60"}`}>
-                            {ACTIVITY_LABEL[a.status] ?? a.status}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                {/* Everything below is a compact tap-able tile — the full chart or
+                    list opens in a popup, so this hub never scrolls. */}
+                <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+                  <Tile
+                    icon="📈"
+                    label="Revenue Trend"
+                    value={formatCurrency(data.revenueTrend.reduce((s, d) => s + d.amount, 0))}
+                    sub="Last 7 days · tap for chart"
+                    sparkline={data.revenueTrend.map((d) => ({ x: d.day, y: d.amount }))}
+                    onClick={() => setActiveTile("revenueTrend")}
+                    accentIndex={0}
+                  />
+                  <Tile
+                    icon="👨‍⚕️"
+                    label="Revenue by Doctor"
+                    value={data.byDoctor[0]?.name ?? "No data"}
+                    sub={data.byDoctor[0]?.revenue ? `Top earner · ${formatCurrency(data.byDoctor[0].revenue)}` : "Tap for breakdown"}
+                    onClick={() => setActiveTile("byDoctor")}
+                    accentIndex={1}
+                  />
+                  <Tile
+                    icon="📅"
+                    label="Appointments"
+                    value={String(data.weeklyAppointments.reduce((s, d) => s + d.count, 0))}
+                    sub="This week · tap for daily view"
+                    sparkline={data.weeklyAppointments.map((d) => ({ x: d.day, y: d.count }))}
+                    onClick={() => setActiveTile("weeklyAppts")}
+                    accentIndex={2}
+                  />
+                  <Tile
+                    icon="💳"
+                    label="Payment Methods"
+                    value={data.paymentMethodTrends[0]?.name ?? "No data"}
+                    sub={data.paymentMethodTrends[0] ? `Leading · ${formatCurrency(data.paymentMethodTrends[0].total)}` : "Tap for breakdown"}
+                    onClick={() => setActiveTile("paymentMethods")}
+                    accentIndex={3}
+                  />
+                  <Tile
+                    icon="🕒"
+                    label="Recent Activity"
+                    value={data.recentActivity[0]?.patient ?? "No activity"}
+                    sub={data.recentActivity[0] ? `${relativeDay(data.recentActivity[0].date)} · tap for full list` : "Tap for full list"}
+                    onClick={() => setActiveTile("recentActivity")}
+                    accentIndex={0}
+                  />
+                  <Tile
+                    icon="🦷"
+                    label="Profit by Treatment"
+                    value={data.topTreatmentsWeek[0]?.treatment ?? "No data"}
+                    sub={data.topTreatmentsWeek[0] ? `${formatCurrency(data.topTreatmentsWeek[0].revenue)} · most profitable` : "Tap for breakdown"}
+                    onClick={() => setActiveTile("treatments")}
+                    accentIndex={1}
+                  />
                 </div>
 
                 {/* Secondary tiles for the less headline-grabbing breakdowns */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <button onClick={() => setActiveTile("treatments")} className="card p-3 text-left hover:shadow-lg transition">
-                    <span className="w-8 h-8 rounded-full flex items-center justify-center text-sm bg-violet/10">🦷</span>
-                    <p className="text-[11px] text-ink/50 mt-2">Top treatment</p>
-                    <p className="font-display text-sm font-semibold text-ink truncate">{data.topTreatmentsWeek[0]?.treatment ?? "No data"}</p>
+                <div className="grid grid-cols-3 gap-3">
+                  <button onClick={() => setActiveTile("localities")} className="card p-2.5 text-left hover:shadow-lg transition">
+                    <span className="w-7 h-7 rounded-full flex items-center justify-center text-sm bg-rose/10">📍</span>
+                    <p className="text-[11px] text-ink/50 mt-1.5">Localities</p>
+                    <p className="font-display text-base font-semibold text-ink">{data.topLocalities.length} areas</p>
                   </button>
-                  <button onClick={() => setActiveTile("localities")} className="card p-3 text-left hover:shadow-lg transition">
-                    <span className="w-8 h-8 rounded-full flex items-center justify-center text-sm bg-rose/10">📍</span>
-                    <p className="text-[11px] text-ink/50 mt-2">Localities</p>
-                    <p className="font-display text-lg font-semibold text-ink">{data.topLocalities.length} areas</p>
+                  <button onClick={() => setActiveTile("byDoctor")} className="card p-2.5 text-left hover:shadow-lg transition">
+                    <span className="w-7 h-7 rounded-full flex items-center justify-center text-sm bg-teal/10">👨‍⚕️</span>
+                    <p className="text-[11px] text-ink/50 mt-1.5">All doctors</p>
+                    <p className="font-display text-base font-semibold text-ink">{data.byDoctor.length} docs</p>
                   </button>
-                  <button onClick={() => setActiveTile("byDoctor")} className="card p-3 text-left hover:shadow-lg transition">
-                    <span className="w-8 h-8 rounded-full flex items-center justify-center text-sm bg-teal/10">👨‍⚕️</span>
-                    <p className="text-[11px] text-ink/50 mt-2">All doctors</p>
-                    <p className="font-display text-lg font-semibold text-ink">{data.byDoctor.length} docs</p>
-                  </button>
-                  <div className="card p-3">
-                    <span className="w-8 h-8 rounded-full flex items-center justify-center text-sm bg-amber-100">✅</span>
-                    <p className="text-[11px] text-ink/50 mt-2">Collection rate</p>
-                    <p className="font-display text-lg font-semibold text-ink">{data.collectionRatePct.toFixed(0)}%</p>
+                  <div className="card p-2.5">
+                    <span className="w-7 h-7 rounded-full flex items-center justify-center text-sm bg-amber-100">✅</span>
+                    <p className="text-[11px] text-ink/50 mt-1.5">Collection rate</p>
+                    <p className="font-display text-base font-semibold text-ink">{data.collectionRatePct.toFixed(0)}%</p>
                   </div>
                 </div>
               </div>
@@ -974,27 +913,84 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
         )}
       </Modal>
 
-      <Modal open={activeTile === "byDoctor"} onClose={() => setActiveTile(null)} title="Business by doctor — tap a doctor">
+      <Modal open={activeTile === "byDoctor"} onClose={() => setActiveTile(null)} title="Revenue by doctor — tap a slice or name">
         {data && (
-          <div className="space-y-2">
-            {data.byDoctor.map((d) => (
-              <button
-                key={d.id}
-                onClick={() => goToDetail({ kind: "doctor", id: d.id })}
-                className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-left bg-sand hover:bg-teal/10 transition"
-              >
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{d.name}</p>
-                  <p className="text-xs text-ink/50">{d.specialty}</p>
+          <>
+            {data.byDoctor.every((d) => d.revenue === 0) ? (
+              <p className="text-sm text-ink/40 py-10 text-center">No revenue recorded yet</p>
+            ) : (
+              <div style={{ width: "100%", height: 200 }} className="relative">
+                <ResponsiveContainer>
+                  <PieChart>
+                    <Pie
+                      data={data.byDoctor.filter((d) => d.revenue > 0)}
+                      dataKey="revenue" nameKey="name" innerRadius={55} outerRadius={85} paddingAngle={2}
+                      onClick={(entry: any) => goToDetail({ kind: "doctor", id: entry.id })}
+                      cursor="pointer"
+                    >
+                      {data.byDoctor.filter((d) => d.revenue > 0).map((d, i) => (
+                        <Cell key={d.id} fill={DOCTOR_COLORS[i % DOCTOR_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip formatter={(v: number) => formatCurrency(v)} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                  <p className="text-[10px] text-ink/40">Top earner</p>
+                  <p className="text-xs font-semibold text-ink truncate max-w-[110px] text-center">
+                    {data.byDoctor[0]?.name ?? "—"}
+                  </p>
                 </div>
-                <p className="font-display text-sm font-semibold whitespace-nowrap">{formatCurrency(d.revenue)}</p>
-              </button>
-            ))}
-          </div>
+              </div>
+            )}
+            <div className="space-y-2 mt-3">
+              {data.byDoctor.map((d, i) => (
+                <button
+                  key={d.id}
+                  onClick={() => goToDetail({ kind: "doctor", id: d.id })}
+                  className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-left bg-sand hover:bg-teal/10 transition"
+                >
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: DOCTOR_COLORS[i % DOCTOR_COLORS.length] }} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{d.name}</p>
+                    <p className="text-xs text-ink/50">{d.specialty}</p>
+                  </div>
+                  <p className="font-display text-sm font-semibold whitespace-nowrap">{formatCurrency(d.revenue)}</p>
+                </button>
+              ))}
+            </div>
+          </>
         )}
       </Modal>
 
-      <Modal open={activeTile === "treatments"} onClose={() => setActiveTile(null)} title="Top treatments (7 days) — tap one">
+      <Modal open={activeTile === "recentActivity"} onClose={() => setActiveTile(null)} title="Recent activity">
+        {data && (
+          data.recentActivity.length === 0 ? (
+            <p className="text-sm text-ink/40 py-4 text-center">No appointments yet</p>
+          ) : (
+            <div>
+              {data.recentActivity.map((a) => (
+                <div key={a.id} className="flex items-center gap-3 py-2.5 border-b border-line last:border-0">
+                  <span className="w-8 h-8 rounded-full bg-teal/10 text-teal font-display font-semibold text-xs flex items-center justify-center shrink-0">
+                    {a.patient.trim().slice(0, 1).toUpperCase()}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-ink truncate">{a.patient}</p>
+                    <p className="text-xs text-ink/40 truncate">
+                      {a.doctor} · {relativeDay(a.date)}{a.time ? `, ${a.time.slice(0, 5)}` : ""}
+                    </p>
+                  </div>
+                  <span className={`text-xs font-semibold rounded-full px-2.5 py-1 shrink-0 ${ACTIVITY_STYLE[a.status] ?? "bg-sand text-ink/60"}`}>
+                    {ACTIVITY_LABEL[a.status] ?? a.status}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )
+        )}
+      </Modal>
+
+      <Modal open={activeTile === "treatments"} onClose={() => setActiveTile(null)} title="Profit by treatment (90 days) — tap one">
         {data && (
           <>
             {data.topTreatmentsWeek.length === 0 ? (
@@ -1103,23 +1099,43 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
       <Modal
         open={detail?.kind === "day"}
         onClose={closeAll}
-        title={detail?.kind === "day" ? new Date(detail.date).toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "short" }) : ""}
+        title={detail?.kind === "day" ? new Date(detail.date + "T00:00:00").toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "short", year: "numeric" }) : ""}
       >
-        {data && detail?.kind === "day" && (
-          <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-xl p-4 bg-teal text-white text-center">
-              <p className="font-display text-2xl font-semibold">
-                {formatCurrency(data.revenueTrend.find((d) => d.date === detail.date)?.amount ?? 0)}
-              </p>
-              <p className="text-xs opacity-80 mt-1">revenue</p>
+        {detailLoading ? (
+          <p className="text-sm text-ink/60"><Spinner size={14} className="mr-1.5" />Loading…</p>
+        ) : (
+          detail?.kind === "day" &&
+          detailExtra && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-xl p-4 bg-teal text-white text-center">
+                  <p className="font-display text-2xl font-semibold">{formatCurrency(detailExtra.revenue ?? 0)}</p>
+                  <p className="text-xs opacity-80 mt-1">revenue</p>
+                </div>
+                <div className="rounded-xl p-4 bg-teal text-white text-center">
+                  <p className="font-display text-2xl font-semibold">{(detailExtra.appts ?? []).length}</p>
+                  <p className="text-xs opacity-80 mt-1">appointments</p>
+                </div>
+              </div>
+              {(detailExtra.appts ?? []).length > 0 && (
+                <div>
+                  <p className="text-sm font-semibold text-ink/70 mb-2">Appointments</p>
+                  <ul className="space-y-1.5 max-h-64 overflow-y-auto">
+                    {detailExtra.appts.map((a: any) => (
+                      <li key={a.id} className="text-sm bg-sand rounded-lg px-3 py-2 flex items-center justify-between gap-2">
+                        <span className="truncate">
+                          {a.patients?.full_name ?? "Unknown"}{a.doctors?.name ? ` · ${a.doctors.name}` : ""}
+                        </span>
+                        <span className="text-xs text-ink/50 shrink-0">
+                          {a.appointment_time?.slice(0, 5) ?? ""} · {ACTIVITY_LABEL[a.status] ?? a.status}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
-            <div className="rounded-xl p-4 bg-teal text-white text-center">
-              <p className="font-display text-2xl font-semibold">
-                {data.weeklyAppointments.find((d) => d.date === detail.date)?.count ?? 0}
-              </p>
-              <p className="text-xs opacity-80 mt-1">appointments</p>
-            </div>
-          </div>
+          )
         )}
       </Modal>
 
@@ -1135,7 +1151,7 @@ export default function OwnerQuickView({ clinicId }: { clinicId: string }) {
           return (
             <div className="rounded-xl p-4 bg-teal text-white text-center">
               <p className="font-display text-2xl font-semibold">{formatCurrency(t?.revenue ?? 0)}</p>
-              <p className="text-xs opacity-80 mt-1">{pct.toFixed(0)}% of this week's treatment revenue</p>
+              <p className="text-xs opacity-80 mt-1">{pct.toFixed(0)}% of this period's treatment revenue</p>
             </div>
           );
         })()}
