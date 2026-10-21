@@ -5,7 +5,7 @@ export type Clinic = {
   clinic_type: string | null;
 };
 
-export type TabKey = "overview" | "patients" | "appointments" | "billing" | "inventory";
+export type TabKey = "overview" | "patients" | "appointments" | "billing" | "inventory" | "growth";
 
 export type Patient = {
   id: string;

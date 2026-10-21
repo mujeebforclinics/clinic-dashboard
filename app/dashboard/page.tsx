@@ -11,6 +11,7 @@ import BillingTab from "@/components/BillingTab";
 import InventoryTab from "@/components/InventoryTab";
 import OwnerQuickView from "@/components/OwnerQuickView";
 import NoteForOwner from "@/components/NoteForOwner";
+import GrowthTab from "@/components/GrowthTab";
 import Sidebar from "@/components/Sidebar";
 
 const TAB_TITLES: Record<TabKey, { title: string; subtitle: string }> = {
@@ -19,6 +20,7 @@ const TAB_TITLES: Record<TabKey, { title: string; subtitle: string }> = {
   patients: { title: "Patients", subtitle: "Search records, visit history and revenue." },
   billing: { title: "Billing", subtitle: "Invoices, payments and outstanding dues." },
   inventory: { title: "Inventory", subtitle: "Stock levels, batches and expiry tracking." },
+  growth: { title: "Growth", subtitle: "Reviews, Google visibility, ads and content in one place." },
 };
 
 export default function DashboardPage() {
@@ -230,6 +232,7 @@ export default function DashboardPage() {
             )}
             {activeTab === "billing" && <BillingTab clinicId={clinic.id} />}
             {activeTab === "inventory" && <InventoryTab clinicId={clinic.id} />}
+            {activeTab === "growth" && <GrowthTab clinicId={clinic.id} />}
           </div>
         </main>
       </div>
