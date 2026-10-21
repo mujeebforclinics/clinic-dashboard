@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Clinic Dashboard",
+  title: "Muexa | Clinic Intelligence",
   description: "Live dashboard for appointments, billing, and inventory.",
 };
 

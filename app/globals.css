@@ -3,39 +3,39 @@
 @tailwind utilities;
 
 :root {
-  --font-display: "Fraunces", Georgia, serif;
+  --font-display: "Inter", system-ui, sans-serif;
   --font-body: "Inter", system-ui, sans-serif;
 }
 
-body { background-color: #f6f2ec; color: #1c2321; }
+body { background-color: #f4f7f6; color: #0b2636; }
 * { scrollbar-width: thin; }
 
-.card { background: white; border: 1px solid #e4ded2; border-radius: 0.75rem; box-shadow: 0 2px 8px rgba(28,35,33,0.06), 0 1px 2px rgba(28,35,33,0.04); }
+.card { background: white; border: 1px solid #dfe6e8; border-radius: 0.75rem; box-shadow: 0 2px 8px rgba(28,35,33,0.06), 0 1px 2px rgba(28,35,33,0.04); }
 
 /* Primary actions use the calming teal - clay/orange is reserved for
    alerts (low stock, unpaid, cancelled, no-show) so warnings actually
    stand out instead of blending into everyday buttons. */
 .btn-primary {
-  background-color: #1d7874; color: white; border-radius: 0.5rem;
+  background-color: #0EAA98; color: white; border-radius: 0.5rem;
   padding: 0.6rem 1.1rem; font-weight: 600; transition: opacity 0.15s ease;
 }
 .btn-primary:hover { opacity: 0.9; }
 .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .btn-ghost {
-  border: 1px solid #e4ded2; border-radius: 0.5rem; padding: 0.6rem 1.1rem;
-  font-weight: 500; color: #1c2321; background: white;
+  border: 1px solid #dfe6e8; border-radius: 0.5rem; padding: 0.6rem 1.1rem;
+  font-weight: 500; color: #0b2636; background: white;
 }
-.btn-ghost:hover { background: #f6f2ec; }
+.btn-ghost:hover { background: #f4f7f6; }
 
 .input {
-  border: 1px solid #e4ded2; border-radius: 0.5rem; padding: 0.55rem 0.75rem;
+  border: 1px solid #dfe6e8; border-radius: 0.5rem; padding: 0.55rem 0.75rem;
   width: 100%; background: white; font-size: 0.925rem;
 }
-.input:focus { outline: 2px solid #1d7874; outline-offset: 1px; }
+.input:focus { outline: 2px solid #0EAA98; outline-offset: 1px; }
 
 .tab { padding: 0.5rem 0.9rem; border-radius: 0.5rem; font-weight: 500; font-size: 0.9rem; color: #6b6156; }
-.tab-active { background: #1c2321; color: white; }
+.tab-active { background: #0b2636; color: white; }
 
 /* Smooth, demo-friendly motion: popups fade + settle in instead of
    snapping open, and every tap/hover eases instead of jumping. */
@@ -46,3 +46,14 @@ body { background-color: #f6f2ec; color: #1c2321; }
 
 button, .card, a { transition: all 0.18s ease; }
 * { -webkit-tap-highlight-color: transparent; }
+
+/* ---- Muexa premium refresh ---- */
+:root { --teal:#0EAA98; --ink:#0B2636; }
+.card{border-radius:1rem !important;box-shadow:0 1px 2px rgba(11,38,54,.04),0 8px 24px rgba(11,38,54,.06) !important}
+.input{border:1px solid #d9e2e4;border-radius:.75rem;padding:.7rem .9rem;background:#fff;transition:border-color .15s,box-shadow .15s}
+.input:hover{border-color:#b9c9cc}
+.input:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 4px rgba(14,170,152,.15)}
+.btn-primary{border-radius:.75rem !important;padding:.75rem 1.1rem !important;box-shadow:0 6px 18px rgba(14,170,152,.28);transition:transform .15s,box-shadow .15s,opacity .15s}
+.btn-primary:hover{transform:translateY(-1px);box-shadow:0 10px 24px rgba(14,170,152,.34);opacity:1}
+.btn-primary:active{transform:translateY(0)}
+:focus-visible{outline:2px solid var(--teal);outline-offset:2px}

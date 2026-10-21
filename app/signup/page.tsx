@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
+import AuthShell from "@/components/AuthShell";
 
 export default function SignupPage() {
   const router = useRouter();
@@ -52,38 +53,27 @@ export default function SignupPage() {
 
   if (checkEmail) {
     return (
-      <main className="min-h-screen flex items-center justify-center px-4">
-        <div className="card p-6 max-w-sm text-center">
-          <p className="font-display text-xl font-semibold mb-2">
-            Check your email
-          </p>
-          <p className="text-sm text-ink/60">
-            We sent a confirmation link to <strong>{email}</strong>. Click it,
-            then come back and log in, and your clinic will be set up
-            automatically.
-          </p>
-          <Link href="/login" className="btn-primary inline-block mt-4">
-            Go to login
-          </Link>
+      <AuthShell
+        title="Check your email"
+        subtitle="One quick step and your clinic is ready."
+        footer={<Link href="/login" className="font-semibold text-teal hover:underline">Go to login</Link>}
+      >
+        <div className="card p-6 text-sm text-ink/70">
+          We sent a confirmation link to <strong className="text-ink">{email}</strong>. Click it, then come back and log in. Your clinic will be set up automatically.
         </div>
-      </main>
+      </AuthShell>
     );
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center px-4">
-      <div className="w-full max-w-md">
-        <h1 className="font-display text-3xl font-semibold mb-1">
-          Set up your clinic
-        </h1>
-        <p className="text-ink/60 mb-6 text-sm">
-          Create your account to start tracking appointments, billing, and
-          inventory live.
-        </p>
-
-        <form onSubmit={handleSignup} className="card p-6 space-y-4">
+    <AuthShell
+      title="Set up your clinic"
+      subtitle="Start free. Create your account to track appointments, billing and inventory."
+      footer={<>Already have an account? <Link href="/login" className="font-semibold text-teal hover:underline">Log in</Link></>}
+    >
+      <form onSubmit={handleSignup} className="space-y-4">
           <div>
-            <label className="text-sm font-medium mb-1 block">
+            <label className="mb-1.5 block text-sm font-medium">
               Clinic name
             </label>
             <input
@@ -95,7 +85,7 @@ export default function SignupPage() {
             />
           </div>
           <div>
-            <label className="text-sm font-medium mb-1 block">
+            <label className="mb-1.5 block text-sm font-medium">
               Owner name
             </label>
             <input
@@ -107,7 +97,7 @@ export default function SignupPage() {
             />
           </div>
           <div>
-            <label className="text-sm font-medium mb-1 block">
+            <label className="mb-1.5 block text-sm font-medium">
               Clinic type
             </label>
             <select
@@ -124,7 +114,7 @@ export default function SignupPage() {
             </select>
           </div>
           <div>
-            <label className="text-sm font-medium mb-1 block">Email</label>
+            <label className="mb-1.5 block text-sm font-medium">Email</label>
             <input
               className="input"
               type="email"
@@ -134,7 +124,7 @@ export default function SignupPage() {
             />
           </div>
           <div>
-            <label className="text-sm font-medium mb-1 block">
+            <label className="mb-1.5 block text-sm font-medium">
               Password
             </label>
             <input
@@ -161,14 +151,6 @@ export default function SignupPage() {
             {loading ? "Creating account…" : "Create account"}
           </button>
         </form>
-
-        <p className="text-sm text-ink/60 mt-4 text-center">
-          Already have an account?{" "}
-          <Link href="/login" className="text-clay font-medium">
-            Log in
-          </Link>
-        </p>
-      </div>
-    </main>
+    </AuthShell>
   );
 }
