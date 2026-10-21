@@ -7,9 +7,9 @@ export const metadata: Metadata = {
     "Appointments, patients, billing and inventory in one calm dashboard, plus Google reviews, local SEO and ads. Start free.",
 };
 
-// Change this to your own contact details
-const CONTACT_EMAIL = "mujeeb.khan@fourwaysconsulting.com";
-const CONTACT_HREF = `mailto:${CONTACT_EMAIL}?subject=Muexa%20for%20my%20clinic`;
+// Add your Muexa contact here (a Muexa email or a WhatsApp link).
+// While empty, the "Talk to us" buttons are hidden.
+const CONTACT_HREF = "";
 
 const RUN = [
   { t: "Appointments", d: "Every doctor, every slot, one calendar. See no shows before they cost you." },
@@ -121,9 +121,7 @@ export default function Home() {
           <Link href="/signup" className="rounded-xl bg-[#2dd4bf] text-[#06141d] font-semibold px-7 py-3.5 shadow-lg shadow-[#2dd4bf]/25 hover:brightness-110 transition">
             Start free
           </Link>
-          <a href={CONTACT_HREF} className="rounded-xl border border-white/20 px-7 py-3.5 font-medium text-white/90 hover:bg-white/5 transition">
-            Talk to us
-          </a>
+          {CONTACT_HREF && (<a href={CONTACT_HREF} className="rounded-xl border border-white/20 px-7 py-3.5 font-medium text-white/90 hover:bg-white/5 transition">Talk to us</a>)}
         </div>
         <p className="mt-4 text-sm text-white/40">See it on your own clinic first.</p>
         <Preview />
@@ -195,9 +193,7 @@ export default function Home() {
             <Link href="/signup" className="rounded-xl bg-white text-[#06141d] font-semibold px-7 py-3.5 hover:bg-white/90 transition">
               Start free
             </Link>
-            <a href={CONTACT_HREF} className="rounded-xl border border-white/40 px-7 py-3.5 font-medium hover:bg-white/10 transition">
-              Talk to us
-            </a>
+            {CONTACT_HREF && (<a href={CONTACT_HREF} className="rounded-xl border border-white/40 px-7 py-3.5 font-medium hover:bg-white/10 transition">Talk to us</a>)}
           </div>
         </div>
       </section>

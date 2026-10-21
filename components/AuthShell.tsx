@@ -33,7 +33,7 @@ export default function AuthShell({
         </Link>
         <div className="relative max-w-md">
           <h2 className="text-4xl font-semibold leading-tight tracking-tight">
-            Run your clinic with <span className="text-[#2dd4bf] italic font-display">less work.</span>
+            <span className="block">Run your clinic with</span><span className="text-[#2dd4bf] italic font-display whitespace-nowrap">less work.</span>
           </h2>
           <ul className="mt-8 space-y-4">
             {POINTS.map((p) => (
